@@ -3619,7 +3619,20 @@ function viewUnit(s){
         iconColor:assessRec?'#fff':examUnlocked?'var(--amber)':'var(--text3)'
     });
     
+    // 🧪 박민성 새 흐름: 셀프(훈련모드)까지 끝났고 실전 잠긴 상태면 "리딩 숙제 완료" 배너
+    let _readingDoneBanner='';
+    if(isFlowModeUser() && trainRec && !assessRec){
+        const _fl=getFlowState()||{phase:'selfcheck'};
+        if(_fl.phase==='selfcheck'){
+            _readingDoneBanner=`<div style="text-align:center;padding:20px 16px;background:#D1FAE5;border:2px solid #10B981;border-radius:16px;margin-bottom:14px;max-width:680px;margin-left:auto;margin-right:auto">
+                <div style="font-size:36px;margin-bottom:6px">📖✅</div>
+                <div style="font-size:18px;font-weight:800;color:#065F46">리딩 숙제 완료!</div>
+                <div style="font-size:13px;color:#047857;margin-top:6px;line-height:1.7">훈련모드(셀프체크)까지 끝냈어요. 여기까지가 오늘 리딩 숙제예요.<br>문법·단어도 끝낸 뒤 학습일정에서 <b>[숙제 완료]</b>를 누르면<br>실전평가가 열립니다 (학원에서 진행).</div>
+            </div>`;
+        }
+    }
     return `<div class="flex flex-between mb-24"><div><h2>${state.unit.replace('unit','Unit ')}</h2><div class="page-desc" style="margin:0">${bookName}</div></div><button class="btn-ghost" onclick="state.view='dashboard';render()">← 목록으로</button></div>
+    ${_readingDoneBanner}
     <div style="max-width:680px;margin:0 auto">
         ${artCards}
         ${trainCard}

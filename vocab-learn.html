@@ -3293,6 +3293,30 @@ function _showSelfCheckGate(){
 
 // 🚪 실전평가 게이트 화면 — 셀프체크 통과 후, 실전평가 시작 안내
 function _showRealExamGate(){
+    // 🧪 새 흐름(박민성 등): exam phase 전에는 실전평가 진입 차단
+    try{
+        const FLOW_IDS = ['01087080656'];
+        const _sid = (typeof studentId!=='undefined' && studentId && studentId!=='pv') ? studentId
+                   : (function(){try{const u=JSON.parse(localStorage.getItem('rl_current_user')||'null');return u&&u.id;}catch(e){return null;}})();
+        if(_sid && FLOW_IDS.includes(String(_sid))){
+            let _phase='selfcheck';
+            try{const _f=JSON.parse(localStorage.getItem('rl_flow_'+_sid)||'null'); if(_f&&_f.phase) _phase=_f.phase;}catch(e){}
+            if(_phase!=='exam'){
+                document.getElementById('app').innerHTML=`<div class="summary-screen">
+                    <div style="text-align:center;padding:22px 18px;background:#D1FAE5;border:2px solid #10B981;border-radius:16px;margin:10px 0">
+                        <div style="font-size:38px;margin-bottom:6px">📚✅</div>
+                        <div style="font-size:19px;font-weight:800;color:#065F46">단어 숙제 완료!</div>
+                        <div style="font-size:13px;color:#047857;margin-top:8px;line-height:1.7">셀프체크까지 끝냈어요. 여기까지가 오늘 단어 숙제예요.<br>리딩·문법도 끝낸 뒤 학습일정에서 <b>[숙제 완료]</b>를 누르면<br>실전평가가 열립니다 (학원에서 진행).</div>
+                    </div>
+                    <div class="summary-cta" style="margin-top:8px;flex-direction:column;gap:8px">
+                        <button class="nav-btn nav-btn-primary" onclick="goBack()" style="width:100%;padding:14px;font-size:15px">📅 학습일정으로</button>
+                    </div>
+                </div>`;
+                window.scrollTo({top:0,behavior:'instant'});
+                return;
+            }
+        }
+    }catch(e){}
     const reRec=(function(){try{const all=JSON.parse(RL_STORE.get(_realExamStorageKey())||'{}');return all[_selfCheckKey()]||null;}catch(e){return null;}})();
     const vfs=getVocabFlowSettings();
     document.getElementById('app').innerHTML=`<div class="summary-screen">
@@ -3344,6 +3368,16 @@ async function initVocabLearn(){
     
     // 실전평가 모드면 바로 실전평가 시작 (플래시/게임/데이체크 건너뜀)
     if(isExamMode){
+        // 🧪 새 흐름(박민성 등): exam phase 전에는 실전 직접 진입도 차단
+        try{
+            const FLOW_IDS=['01087080656'];
+            const _sid=(studentId&&studentId!=='pv')?studentId:(function(){try{const u=JSON.parse(localStorage.getItem('rl_current_user')||'null');return u&&u.id;}catch(e){return null;}})();
+            if(_sid && FLOW_IDS.includes(String(_sid))){
+                let _phase='selfcheck';
+                try{const _f=JSON.parse(localStorage.getItem('rl_flow_'+_sid)||'null'); if(_f&&_f.phase) _phase=_f.phase;}catch(e){}
+                if(_phase!=='exam'){ _showRealExamGate(); return; }
+            }
+        }catch(e){}
         state.deck=loaded.deck;
         state.day=loaded.day;
         state.words=loaded.day.words.slice();
