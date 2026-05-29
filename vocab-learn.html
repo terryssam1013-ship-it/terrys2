@@ -323,6 +323,7 @@ function getPreviewId(){return studentId;}
 const homeworkSize=Math.max(1,parseInt(params.get('homework'))||1);
 const homeworkIdx=Math.max(1,parseInt(params.get('idx'))||1); // 1-indexed
 const startDayNum=Math.max(1,parseInt(params.get('startDay'))||1); // 첫 DAY 번호
+console.log('[단어 진입] URL params → homework=',params.get('homework'),'idx=',params.get('idx'),'startDay=',params.get('startDay'),'day=',params.get('day'),'| 파싱결과 homeworkSize=',homeworkSize,'homeworkIdx=',homeworkIdx,'startDayNum=',startDayNum);
 const isExamMode=params.get('exam')==='1'; // 실전평가 모드
 const isSummaryMode=params.get('summary')==='1'; // 종합 요약 모드 (셀프체크 통과 후)
 // 🟠 주간평가 모드 — weekly=train(주간 훈련) 또는 weekly=exam(주간 실전)
@@ -577,7 +578,8 @@ function _progressStorageKey(){
 }
 
 function saveLearningProgress(){
-    if(isPreview) return; // 어드민 미리보기 모드는 데이터 저장 차단 (학생 실 데이터 보호)
+    // 미리보기는 _progressStorageKey()가 rl_pv_ 키를 반환하므로 실데이터와 분리되어 안전.
+    //   (이전엔 여기서 저장을 막아 테스트 시 진행이 안 남던 문제 → 미리보기도 저장 허용)
     if(!state.deck||!state.day)return;
     try{
         const key=_progressStorageKey();
@@ -1652,7 +1654,7 @@ function endMoleGame(){
 function saveGameScore(gameType,score,accuracy){
     // 게임 완료 추적 (데이체크 잠금해제 조건)
     state.gamesCompleted.add(gameType);
-    if(isPreview) return; // 어드민 미리보기 모드는 데이터 저장 차단 (학생 실 데이터 보호)
+    // 미리보기는 rl_pv_ 키로 저장되어 실데이터와 분리됨 (테스트 진행 저장 허용)
     try{
         const key='rl_vocab_game_scores';
         const all=JSON.parse(RL_STORE.get(key)||'{}');
@@ -1695,7 +1697,7 @@ function _dayCheckStorageKey(){
 }
 
 function saveDayCheckScore(deckId,dayId,score,passed){
-    if(isPreview) return; // 어드민 미리보기 모드는 데이터 저장 차단 (학생 실 데이터 보호)
+    // 미리보기는 rl_pv_ 키로 저장되어 실데이터와 분리됨 (테스트 진행 저장 허용)
     try{
         const key=_dayCheckStorageKey();
         const all=JSON.parse(RL_STORE.get(key)||'{}');
@@ -1727,7 +1729,7 @@ function _dayCheckProgressKey(){
     return 'rl_vc_daycheck_progress';
 }
 function saveDayCheckProgress(){
-    if(isPreview) return; // 어드민 미리보기 모드는 데이터 저장 차단 (학생 실 데이터 보호)
+    // 미리보기는 rl_pv_ 키로 저장되어 실데이터와 분리됨 (테스트 진행 저장 허용)
     if(!state.dayCheck||!state.deck||!state.day)return;
     try{
         const key=_dayCheckProgressKey();
@@ -1990,6 +1992,7 @@ function renderDayCheckResult(){
     // - 통과 + 마지막 DAY가 아니면 → 다음 DAY 학습 버튼
     // - 통과 + 마지막 DAY면 → 셀프체크 가능 여부 체크
     let nextStepHTML='';
+    console.log('[단어 데이체크 완료] homeworkSize=',homeworkSize,'homeworkIdx=',homeworkIdx,'startDayNum=',startDayNum,'passed=',passed,'→ 분기:',(passed&&homeworkIdx<homeworkSize)?'다음DAY':'셀프체크');
     if(passed){
         if(homeworkIdx<homeworkSize){
             // 다음 DAY 학습 진행
@@ -2102,7 +2105,7 @@ function _selfCheckProgressKey(){
     return 'rl_vc_selfcheck_progress';
 }
 function saveSelfCheckProgress(){
-    if(isPreview) return; // 어드민 미리보기 모드는 데이터 저장 차단 (학생 실 데이터 보호)
+    // 미리보기는 rl_pv_ 키로 저장되어 실데이터와 분리됨 (테스트 진행 저장 허용)
     if(!state.selfCheck)return;
     try{
         const key=_selfCheckProgressKey();
@@ -2132,7 +2135,7 @@ function clearSelfCheckProgress(){
 }
 
 function saveSelfCheckScore(score,passed,questions,answers){
-    if(isPreview) return; // 어드민 미리보기 모드는 데이터 저장 차단 (학생 실 데이터 보호)
+    // 미리보기는 rl_pv_ 키로 저장되어 실데이터와 분리됨 (테스트 진행 저장 허용)
     try{
         const key=_selfCheckStorageKey();
         const all=JSON.parse(RL_STORE.get(key)||'{}');
@@ -2425,7 +2428,7 @@ function _realExamStorageKey(){
 }
 
 function saveRealExamScore(score,questions,answers){
-    if(isPreview) return; // 어드민 미리보기 모드는 데이터 저장 차단 (학생 실 데이터 보호)
+    // 미리보기는 rl_pv_ 키로 저장되어 실데이터와 분리됨 (테스트 진행 저장 허용)
     try{
         const key=_realExamStorageKey();
         const all=JSON.parse(RL_STORE.get(key)||'{}');
@@ -2472,7 +2475,7 @@ function _realExamProgressKey(){
     return 'rl_vc_realexam_progress';
 }
 function saveRealExamProgress(){
-    if(isPreview) return; // 어드민 미리보기 모드는 데이터 저장 차단 (학생 실 데이터 보호)
+    // 미리보기는 rl_pv_ 키로 저장되어 실데이터와 분리됨 (테스트 진행 저장 허용)
     if(!state.realExam)return;
     try{
         const key=_realExamProgressKey();
@@ -2706,7 +2709,7 @@ function _weeklyExamProgressKey(mode){
 }
 
 function saveWeeklyExamProgress(){
-    if(isPreview) return; // 어드민 미리보기 모드는 데이터 저장 차단 (학생 실 데이터 보호)
+    // 미리보기는 rl_pv_ 키로 저장되어 실데이터와 분리됨 (테스트 진행 저장 허용)
     if(!state.weeklyExam)return;
     try{
         const key=_weeklyExamProgressKey(state.weeklyExam.mode);
@@ -2738,7 +2741,7 @@ function clearWeeklyExamProgress(mode){
 }
 
 function saveWeeklyExamScore(mode,score,passed){
-    if(isPreview) return; // 어드민 미리보기 모드는 데이터 저장 차단 (학생 실 데이터 보호)
+    // 미리보기는 rl_pv_ 키로 저장되어 실데이터와 분리됨 (테스트 진행 저장 허용)
     try{
         const key=_weeklyExamStorageKey(mode);
         const all=JSON.parse(RL_STORE.get(key)||'{}');
@@ -3471,8 +3474,8 @@ async function initVocabLearn(){
     // 3) 학습 진도 (knewSet) 복원
     //    progress.done이 true면 → 결과 화면 표시 (마지막 학습 위치)
     //    아니면 안 외운 단어부터 이어서 학습
-    //    어드민 미리보기는 진도 무시하고 항상 처음부터
-    const progress=isPreview?null:loadLearningProgress();
+    //    미리보기도 rl_pv_ 키에서 진행을 복원 (테스트 시 이어하기 가능)
+    const progress=loadLearningProgress();
     
     if(progress&&progress.knew&&progress.knew.length>0){
         const knewSet=new Set(progress.knew);

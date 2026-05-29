@@ -1123,12 +1123,16 @@ function fmtDateISO(d){
    - 진행 단계는 rl_flow_<uid> 키 하나로만 관리 (점수 데이터는 읽기 전용)
    ════════════════════════════════════════════════════════════════ */
 // 새 흐름을 적용할 학생 ID 목록 (시범: 박민성만)
-const FLOW_MODE_IDS = ['01087080656'];
+// 새 흐름(셀프→숙제완료→실전→다음날→주간평가) 적용 대상.
+//   terrys2에서는 모든 학생에게 적용 (이전엔 특정 아이디만이었으나 제한 해제).
+//   비우면 '로그인한 학생 전체'가 대상. 특정 학생만 빼고 싶으면 EXCLUDE에 추가.
+const FLOW_MODE_EXCLUDE = [];
 function isFlowModeUser(){
     try{
         const u=getUser();
         if(!u) return false;
-        return FLOW_MODE_IDS.includes(String(u.id));
+        if(FLOW_MODE_EXCLUDE.includes(String(u.id))) return false;
+        return true;
     }catch(e){ return false; }
 }
 // flow 상태 읽기 {phase:'selfcheck'|'exam', stepReady:bool}

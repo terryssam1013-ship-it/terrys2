@@ -2804,10 +2804,10 @@ function renderResults(stageN){
       const data = JSON.parse(localStorage.getItem(key)||'null');
       if(data && Array.isArray(data.attempts)) attempts = data.attempts.length;
     }catch(e){}
-    // 🧪 새 흐름(박민성 등): 셀프체크 단계에서는 실전평가로 바로 못 넘어감.
+    // 새 흐름: 셀프체크 단계에서는 실전평가로 바로 못 넘어감.
     //    메인 [숙제 완료] 버튼을 눌러 phase가 'exam'이 되어야 실전 진입 허용.
-    const FLOW_IDS = ['01087080656'];
-    if(sid && FLOW_IDS.includes(String(sid))){
+    //    terrys2에서는 로그인한 모든 학생에게 적용 (sid 있으면 대상).
+    if(sid){
       let _flowPhase='selfcheck';
       try{
         const _f=JSON.parse(localStorage.getItem('rl_flow_'+sid)||'null');
@@ -2899,13 +2899,12 @@ function renderResults(stageN){
 // ============================================================
 function render(){
   // Update tabs
-  // 🧪 새 흐름(박민성 등): exam phase 전에는 STEP 5(실전평가) 탭 잠금
+  // 새 흐름: exam phase 전에는 STEP 5(실전평가) 탭 잠금 (로그인한 모든 학생 적용)
   let _flowLockExam = false;
   try{
-    const FLOW_IDS = ['01087080656'];
     let _fsid = new URLSearchParams(location.search).get('previewSid');
     if(!_fsid){ const _u=JSON.parse(localStorage.getItem('rl_current_user')||'null'); _fsid=_u&&_u.id; }
-    if(_fsid && FLOW_IDS.includes(String(_fsid))){
+    if(_fsid){
       const _f=JSON.parse(localStorage.getItem('rl_flow_'+_fsid)||'null');
       _flowLockExam = !(_f && _f.phase==='exam');
     }
