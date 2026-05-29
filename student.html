@@ -1356,20 +1356,18 @@ function viewDashboard(s){
     return `
     <div class="hero">
         <h2>안녕하세요 ${s.name||''} 학생님 👋</h2>
-        <p>학습 일정대로 진행해 주세요. 오늘도 파이팅 하세요!</p>
+        <p>오늘의 숙제를 확인하고 차근차근 진행해 보세요. 파이팅!</p>
     </div>
     <div class="card">
         <div class="flex flex-between mb-16">
-            <h3 style="margin:0">📅 학습 일정</h3>
+            <h3 style="margin:0">📚 내 학습</h3>
             <div class="seg">
-                <button class="seg-btn ${state.schedTab==='week'?'active':''}" onclick="state.schedTab='week';render()">주간일정</button>
-                <button class="seg-btn ${state.schedTab==='monthly'?'active':''}" onclick="state.schedTab='monthly';render()">월간일정</button>
-                <button class="seg-btn ${state.schedTab==='today'?'active':''}" onclick="state.schedTab='today';render()">학습현황</button>
-                <button class="seg-btn ${state.schedTab==='month'?'active':''}" onclick="state.schedTab='month';render()">누적현황</button>
+                <button class="seg-btn ${state.schedTab==='week'?'active':''}" onclick="state.schedTab='week';render()">이번 주 숙제</button>
+                <button class="seg-btn ${state.schedTab==='month'?'active':''}" onclick="state.schedTab='month';render()">누적 현황</button>
                 <button class="seg-btn ${state.schedTab==='gichul'?'active':''}" onclick="state.schedTab='gichul';render()">기출문제</button>
             </div>
         </div>
-        ${state.schedTab==='gichul'?renderGichul(s):state.schedTab==='month'?renderCumulativeHistory(s):state.schedTab==='today'?renderTodayStatus(s):state.schedTab==='monthly'?renderMonthlySchedule(s):renderSchedule(s)}
+        ${state.schedTab==='gichul'?renderGichul(s):state.schedTab==='month'?renderCumulativeHistory(s):renderSchedule(s)}
     </div>`;
 }
 
@@ -2204,63 +2202,52 @@ function renderSchedule(s){
     </div>`:'';
     const homeworkCard=_hwCard(readingHW,'#3B82F6')+_hwCard(grammarHW,'#A855F7')+_hwCard(vocabHW,'#F59E0B');
     
-    return `${homeworkCard}<div class="sched-wrap" style="position:relative"><table class="sched sched-pretty">
-        <thead>
-            <tr class="sched-head-main">
-                <th rowspan="2" class="sched-th-base">날짜</th>
-                <th rowspan="2" class="sched-th-base">요일</th>
-                <th colspan="2" class="sched-th-reading">📖 리딩</th>
-                <th colspan="2" class="sched-th-grammar">📝 문법</th>
-                <th colspan="2" class="sched-th-vocab">📚 단어</th>
-            </tr>
-            <tr class="sched-head-sub">
-                <th class="sched-sub-th sub-train sub-reading">훈련</th>
-                <th class="sched-sub-th sub-exam">실전</th>
-                <th class="sched-sub-th sub-train sub-grammar">훈련</th>
-                <th class="sched-sub-th sub-exam">실전</th>
-                <th class="sched-sub-th sub-train sub-vocab">훈련</th>
-                <th class="sched-sub-th sub-exam">실전</th>
-            </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-    </table></div>
-    ${state.schedTab==='week'||state.schedTab==='monthly'?(()=>{
-        if(state.schedTab!=='week')return '';
-        // 간단한 완료 체크: 모든 셀이 점수(N점) 표시이면 완료
-        // "학습" 버튼이나 잠금 셀이 하나라도 있으면 미완료
-        const hasIncomplete=rows.includes('>학습</span>')||rows.includes('sc-locked')||rows.includes('sc-pending')||rows.includes('admin-done-btn');
-        const allDone=sessions.length>0&&!hasIncomplete;
+    // ── Step 2: 메인 화면 단순화 ──
+    // 화면에는 (1) 다음 숙제 카드 3개 + (2) Next Week 버튼만 표시.
+    // 날짜별 잠금 일정표(table)는 화면에서 제거 (도미노 버그 근원).
+    // 단, 완료 판정용 rows/sessions 계산 로직은 그대로 유지하여 Next Week 활성화에 사용.
+
+    // 카드가 하나도 없으면(=이번 주 모든 숙제 완료) 안내 메시지
+    const _allCaughtUp = !readingHW && !grammarHW && !vocabHW;
+    const caughtUpMsg = _allCaughtUp ? `<div style="text-align:center;padding:24px 16px 8px;color:var(--text3)">
+        <div style="font-size:30px;margin-bottom:6px">🎉</div>
+        <div style="font-size:15px;font-weight:600;color:var(--text)">이번 주 숙제를 모두 끝냈어요!</div>
+        <div style="font-size:13px;margin-top:4px">아래 버튼으로 다음 주 학습을 시작하세요.</div>
+    </div>` : '';
+
+    // Next Week 버튼 — 주간평가(리딩·문법·단어) 모두 완료 시 활성화
+    // 완료 판정: 기존 검증된 방식 그대로 — 일정표 rows 안에 '학습' 버튼/잠금/대기/완료대기 셀이 하나도 없으면 완료
+    const hasIncomplete = rows.includes('>학습</span>')||rows.includes('sc-locked')||rows.includes('sc-pending')||rows.includes('admin-done-btn');
+    const allDone = sessions.length>0 && !hasIncomplete;
+
+    let nextWeekArea='';
+    if(state.schedTab==='week'){
         if(allDone){
-            return `<div style="text-align:center;margin-top:20px">
+            nextWeekArea = `<div style="text-align:center;margin-top:16px">
                 <button onclick="advanceWeek()" style="background:#10B981;color:#fff;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(16,185,129,.3)">
                     Next Week →
                 </button>
-                <div style="font-size:12px;color:var(--text3);margin-top:8px">이번 주 학습 완료! 다음 주 일정으로 넘어갑니다</div>
+                <div style="font-size:12px;color:var(--text3);margin-top:8px">이번 주 학습·주간평가 완료! 다음 주 일정으로 넘어갑니다</div>
             </div>`;
         } else {
-            // 미완료 — 어드민 미리보기면 "이번 주 미완료 일괄 처리 후 넘기기" 버튼 추가
-            const adminSkipBtn=isPreview()?`
+            const adminSkipBtn = isPreview()?`
                 <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #E5E7EB">
                     <button onclick="openSkipWeekModal()" style="background:#F59E0B;color:#fff;border:none;border-radius:10px;padding:10px 22px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(245,158,11,.3)">
                         ⏭ 이번 주 미완료 처리 후 넘기기 (관리자)
                     </button>
                     <div style="font-size:11px;color:var(--text3);margin-top:6px">결석·시험기간 등으로 한 주 못 한 경우 사용 — 학생 폰에도 자동 반영</div>
                 </div>`:'';
-            return `<div style="text-align:center;margin-top:20px">
+            nextWeekArea = `<div style="text-align:center;margin-top:16px">
                 <button disabled style="background:#9CA3AF;color:#fff;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:default;opacity:0.5">
                     🔒 Next Week
                 </button>
-                <div style="font-size:12px;color:var(--text3);margin-top:8px">이번 주 리딩·문법·단어 학습을 모두 완료하면 열립니다</div>
+                <div style="font-size:12px;color:var(--text3);margin-top:8px">이번 주 리딩·문법·단어 주간평가를 모두 완료하면 열립니다</div>
                 ${adminSkipBtn}
             </div>`;
         }
-    })():''}
-    <div class="sched-legend">
-        <span>📌 ${fmtDate(filterStart)} ~ ${fmtDate(displayEnd)} 학습 일정</span>
-        <span><span class="legend-dot legend-done"></span>학습 완료 / 다음 숙제</span>
-        <span><span class="legend-dot" style="background:#F59E0B"></span>콘텐츠 준비중</span>
-        <span class="legend-lock"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg> 잠금</span>
-    </div>`;
+    }
+
+    return `${homeworkCard}${caughtUpMsg}${nextWeekArea}`;
 }
 
 function advanceWeek(){
