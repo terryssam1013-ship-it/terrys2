@@ -932,14 +932,24 @@ function getGrammarRecords(){
         const u=getUser();if(!u)return {points:{},selfChecks:{},exams:{},weeklySC:{},weeklyExam:{},progress:null};
         const sid=u.id;
         const records={points:{},selfChecks:{},exams:{},weeklySC:{},weeklyExam:{},progress:null};
-        // 미리보기 모드: 학생 실데이터 먼저 읽고, 미리보기 데이터로 덮어쓰기
-        const prefixes=['rl_gr_'+sid+'_'];
-        const allKeys=RL_STORE.keys();
+        // 미리보기 모드: 학생 실데이터(rl_gr_) + 미리보기 데이터(rl_pv_gr_) 모두 읽음.
+        //   grammarwise는 미리보기일 때 rl_pv_gr_ prefix로 저장하므로 둘 다 스캔해야 한다.
+        //   순서: rl_gr_ 먼저, rl_pv_gr_ 나중 → 미리보기 데이터가 실데이터를 덮어씀.
+        const prefixes=['rl_gr_'+sid+'_','rl_pv_gr_'+sid+'_'];
+        // RL_STORE(IndexedDB)와 localStorage 양쪽 키를 모두 모은다.
+        //   grammarwise는 localStorage.setItem으로 저장하므로 localStorage도 반드시 스캔.
+        const keySet=new Set();
+        try{ RL_STORE.keys().forEach(k=>keySet.add(k)); }catch(e){}
+        try{ for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k)keySet.add(k);} }catch(e){}
+        const allKeys=Array.from(keySet);
+        // 값 읽기: RL_STORE 우선, 없으면 localStorage
+        const readVal=(k)=>{
+            let raw=null;
+            try{ raw=RL_STORE.get(k); }catch(e){}
+            if(raw===null||raw===undefined){ try{ raw=localStorage.getItem(k); }catch(e){} }
+            return raw;
+        };
         // ========== inner-prefix 결정 ==========
-        // grammar-full.html은 'L1_/L2_/L3_' 형식으로 저장 (Level 분기)
-        // grammarwise-ch{N}.html은 'NAMOG1_/NAMOG2_' 형식으로 저장 (나모그)
-        // student.html은 학생의 grammarLevel을 보고 해당 inner-prefix로 분기해서 읽어야 함
-        // (옛 코드는 inner-prefix를 모르고 옛 키 패턴만 읽어서 새 데이터가 안 보이던 버그가 있었음)
         const level=getStudentGrammarLevel();
         let innerPrefix='';
         if(level==='namog2')innerPrefix='NAMOG2_';
@@ -951,21 +961,18 @@ function getGrammarRecords(){
             allKeys.forEach(k=>{
                 if(!k||!k.startsWith(prefix))return;
                 let sub=k.slice(prefix.length);
-                // 마이그레이션 플래그는 항상 무시
                 if(sub.startsWith('_migrated'))return;
-                // 학생 본인 레벨의 inner-prefix → 잘라내고 진행
                 if(innerPrefix&&sub.startsWith(innerPrefix)){
                     sub=sub.slice(innerPrefix.length);
                 }
-                // 다른 레벨의 inner-prefix → 무시 (다른 교재 데이터)
                 else if(sub.startsWith('L1_')||sub.startsWith('L2_')||sub.startsWith('L3_')
                        ||sub.startsWith('NAMOG1_')||sub.startsWith('NAMOG2_')){
                     return;
                 }
-                // 옛 키 (inner-prefix 없음) → 모든 학생이 읽기 (마이그레이션 이전 옛 데이터 호환성)
-                // (해당 학생용 교재로 저장된 것으로 간주)
                 try{
-                    const v=JSON.parse(RL_STORE.get(k));
+                    const raw=readVal(k);
+                    if(raw===null||raw===undefined)return;
+                    const v=JSON.parse(raw);
                     if(sub==='progress')records.progress=v;
                     else if(sub.startsWith('pt_')&&!sub.endsWith('_state'))records.points[sub.slice(3)]=v;
                     else if(sub.startsWith('sc_'))records.selfChecks[sub.slice(3)]=v;
@@ -2451,8 +2458,8 @@ function renderFlowWeek(ctx){
         const hw=subj.hw;
         let title, sub;
         if(mode==='self-done'){
-            // 셀프 끝난 과목 (실전은 아직 안 봄): 과목명 + 셀프 완료
-            title = `${subj.name.replace(/^[^ ]+ /,'')} 셀프체크 완료`;
+            // 셀프 끝난 과목 (실전은 아직 안 봄): 과목명 + 숙제 완료
+            title = `${subj.name.replace(/^[^ ]+ /,'')} 숙제 완료`;
             sub = '실전평가는 학원에서 진행해요';
         } else {
             title = hw ? hw.label : `${subj.name} 완료`;
@@ -2462,7 +2469,7 @@ function renderFlowWeek(ctx){
         if(mode==='self-active'){
             cta='시작 →'; onclick=hw.onclick;
         } else if(mode==='self-done'){
-            cta='✓ 셀프 완료'; onclick=''; faded=true;
+            cta='✓ 숙제 완료'; onclick=''; faded=true;
         } else if(mode==='exam-locked'){
             cta='🔒 실전평가'; onclick=''; locked=true;
         } else if(mode==='exam-active'){
