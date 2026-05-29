@@ -2475,27 +2475,13 @@ function renderFlowWeek(ctx){
         const bg = locked?'#F3F4F6':'#fff';
         const btnBg = locked?'#9CA3AF':(faded?'#10B981':subj.color);
         const click = (onclick&&!locked)?`onclick="${onclick}"`:'';
-        // 🧪 관리자 자동완료 버튼 (미리보기 전용) — 모드별로 셀프/실전/주간 완료 함수 호출
-        let adminBtn='';
-        if(isPreview() && hw){
-            let fn='', label='';
-            if(mode==='self-active'){ fn=hw.selfDoneFn; label='✓ 셀프 자동완료'; }
-            else if(mode==='exam-active'){ fn=hw.examDoneFn; label='✓ 실전 자동완료'; }
-            else if(anyWeekly){ fn=hw.weeklyDoneFn; label='✓ 주간평가 자동완료'; }
-            if(fn){
-                adminBtn=`<div style="margin-top:8px;text-align:right"><button onclick="event.stopPropagation();${fn}" style="font-size:11px;padding:5px 12px;background:#FEF3C7;color:#92400E;border:1px solid #F59E0B;border-radius:6px;cursor:pointer;font-weight:700">🛠 ${label} (관리자)</button></div>`;
-            }
-        }
         return `<div class="next-homework-card" style="border-left:4px solid ${subj.color};margin-bottom:8px;padding:12px 16px;cursor:${cursor};opacity:${opacity};background:${bg}" ${click}>
-            <div style="display:flex;align-items:center">
-              <div class="nhw-left" style="flex:1">
+            <div class="nhw-left" style="flex:1">
                 <div class="nhw-badge" style="font-size:11px">${subj.name}</div>
                 <div class="nhw-title" style="font-size:14px">${title}</div>
                 <div class="nhw-meta">${sub}</div>
-              </div>
-              <div class="nhw-right"><button class="nhw-cta" style="font-size:12px;padding:8px 14px;background:${btnBg};border:none;color:#fff;border-radius:8px;cursor:${cursor}">${cta}</button></div>
             </div>
-            ${adminBtn}
+            <div class="nhw-right"><button class="nhw-cta" style="font-size:12px;padding:8px 14px;background:${btnBg};border:none;color:#fff;border-radius:8px;cursor:${cursor}">${cta}</button></div>
         </div>`;
     }
 
