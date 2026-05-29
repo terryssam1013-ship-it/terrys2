@@ -919,6 +919,27 @@ function getUser(){
 function getStudentData(){const u=getUser();if(!u)return null;const users=LS.g('users')||{};return users[u.id]||u;}
 
 // ========== 문법 학습 진도 조회 (grammar-full.html의 STORE와 동일 키) ==========
+// ── 단어 학습기록 키 (학생별 분리) ──
+// vocab-learn.html과 동일 규칙: 미리보기는 rl_pv_<sid>_, 로그인 학생은 _<sid> 접미.
+//   학생 간 단어 기록이 공용 키로 섞이던 문제를 막기 위함.
+function _vcKey(base){
+    // base 예: 'rl_vc_selfcheck', 'rl_vc_realexam', 'rl_vc_daycheck',
+    //          'rl_vc_weeklyexam_train', 'rl_vc_weeklyexam_exam'
+    try{
+        if(typeof isPreview==='function' && isPreview()){
+            const pid=getPreviewId();
+            if(pid){
+                // rl_vc_selfcheck → rl_pv_<pid>_vc_selfcheck
+                return base.replace(/^rl_/, 'rl_pv_'+pid+'_');
+            }
+        }
+    }catch(e){}
+    try{
+        const u=getUser();
+        if(u&&u.id) return base+'_'+u.id;
+    }catch(e){}
+    return base;
+}
 function getCurrentGrammarPoint(){
     try{
         const u=getUser();if(!u)return null;
@@ -1223,7 +1244,7 @@ function flowAdminVocabSelf(deckId,dayStart,homeworkPerDay){
     try{
         const vIdx=LS.g('vocab_index')||{};
         const deck=vIdx[deckId];
-        const dcKey='rl_vc_daycheck';
+        const dcKey=_vcKey('rl_vc_daycheck');
         const dcAll=JSON.parse(RL_STORE.get(dcKey)||'{}');
         if(deck&&deck.days){
             const maxDay=Math.min(dayStart+homeworkPerDay-1,deck.days.length);
@@ -1238,7 +1259,7 @@ function flowAdminVocabSelf(deckId,dayStart,homeworkPerDay){
     }catch(e){}
     // 셀프체크: 이 묶음 키 하나만
     try{
-        const scKey='rl_vc_selfcheck';
+        const scKey=_vcKey('rl_vc_selfcheck');
         const scAll=JSON.parse(RL_STORE.get(scKey)||'{}');
         const scK=deckId+'/'+dayStart+'_'+homeworkPerDay;
         scAll[scK]={...rec,deckId:deckId,startDay:dayStart,homework:homeworkPerDay};
@@ -1251,7 +1272,7 @@ function flowAdminVocabExam(deckId,dayStart,homeworkPerDay){
     if(!isPreview())return;
     const rec=_FLOW_ADMIN_REC();
     try{
-        const reKey='rl_vc_realexam';
+        const reKey=_vcKey('rl_vc_realexam');
         const reAll=JSON.parse(RL_STORE.get(reKey)||'{}');
         const k=deckId+'/'+dayStart+'_'+homeworkPerDay;
         reAll[k]={...rec,deckId:deckId,startDay:dayStart,homework:homeworkPerDay};
@@ -1270,13 +1291,13 @@ function flowAdminVocabWeekly(deckId,wStart,wEnd){
     const rec=_FLOW_ADMIN_REC();
     const wk=deckId+'/'+wStart+'_'+wEnd;
     try{
-        const tk='rl_vc_weeklyexam_train';
+        const tk=_vcKey('rl_vc_weeklyexam_train');
         const tAll=JSON.parse(RL_STORE.get(tk)||'{}');
         tAll[wk]={...rec,deckId:deckId,startDay:wStart,endDay:wEnd};
         RL_STORE.set(tk,JSON.stringify(tAll));
     }catch(e){}
     try{
-        const ek='rl_vc_weeklyexam_exam';
+        const ek=_vcKey('rl_vc_weeklyexam_exam');
         const eAll=JSON.parse(RL_STORE.get(ek)||'{}');
         eAll[wk]={...rec,deckId:deckId,startDay:wStart,endDay:wEnd};
         RL_STORE.set(ek,JSON.stringify(eAll));
@@ -2035,12 +2056,12 @@ function renderSchedule(s){
                         // ════ 단어 진행 잠금 체인 ════
                         // 흐름: 월훈련→월실전→수훈련→수실전→주간훈련→주간실전→다음주월훈련
                         // 셀프체크 데이터
-                        const scKey='rl_vc_selfcheck';
+                        const scKey=_vcKey('rl_vc_selfcheck');
                         let scRaw=null;
                         try{scRaw=RL_STORE.get(scKey);}catch(e){}
                         const scAll=scRaw?JSON.parse(scRaw):{};
                         // 실전평가 데이터
-                        const reKey='rl_vc_realexam';
+                        const reKey=_vcKey('rl_vc_realexam');
                         let reRaw=null;
                         try{reRaw=RL_STORE.get(reKey);}catch(e){}
                         const reAll=reRaw?JSON.parse(reRaw):{};
@@ -2055,7 +2076,7 @@ function renderSchedule(s){
                         }
                         // 2) 이전 평가일의 주간평가 실전 완료 확인
                         if(canLearn){
-                            const weExamKey='rl_vc_weeklyexam_exam';
+                            const weExamKey=_vcKey('rl_vc_weeklyexam_exam');
                             let weExamRaw=null;
                             try{weExamRaw=RL_STORE.get(weExamKey);}catch(e){}
                             const weExamAll=weExamRaw?JSON.parse(weExamRaw):{};
@@ -2106,7 +2127,7 @@ function renderSchedule(s){
                             // 셀프체크 통과 → 훈련 칸에 점수 표시 (녹색 클릭 가능, 종합 학습 기록 화면 열림)
                             vocabTrainCell=`<span class="sched-cell sc-active" onclick="openVocabSummary('${vocabDeckId}',${dayStart},${homeworkPerDay})" title="셀프체크 ${scRec2.bestScore}점 통과 · 클릭해서 학습 기록 보기">${scRec2.bestScore}점</span>`;
                             // 실전평가 점수 조회
-                            const reKey='rl_vc_realexam';
+                            const reKey=_vcKey('rl_vc_realexam');
                             let reRaw=null;
                             try{reRaw=RL_STORE.get(reKey);}catch(e){}
                             const reAll=reRaw?JSON.parse(reRaw):{};
@@ -2162,7 +2183,7 @@ function renderSchedule(s){
                         let weekDayEnd=null;
                         let allRealExamPassed=true;
                         // 실전평가 데이터
-                        const reKeyW='rl_vc_realexam';
+                        const reKeyW=_vcKey('rl_vc_realexam');
                         let reRawW=null;
                         try{reRawW=RL_STORE.get(reKeyW);}catch(e){}
                         const reAllW=reRawW?JSON.parse(reRawW):{};
@@ -2192,8 +2213,8 @@ function renderSchedule(s){
                         
                         if(allRealExamPassed&&weekDayStart!==null){
                             // 주간평가 훈련/실전 점수 조회
-                            const wTrainKey='rl_vc_weeklyexam_train';
-                            const wExamKey='rl_vc_weeklyexam_exam';
+                            const wTrainKey=_vcKey('rl_vc_weeklyexam_train');
+                            const wExamKey=_vcKey('rl_vc_weeklyexam_exam');
                             let wTrainRaw=null,wExamRaw=null;
                             try{wTrainRaw=RL_STORE.get(wTrainKey);}catch(e){}
                             try{wExamRaw=RL_STORE.get(wExamKey);}catch(e){}
@@ -2304,7 +2325,7 @@ function renderSchedule(s){
                 const vs=sessions[i];
                 if(vs.isWeeklyTest){
                     // 평가일: 주간평가 실전 완료 여부 확인
-                    const weExamKey2='rl_vc_weeklyexam_exam';
+                    const weExamKey2=_vcKey('rl_vc_weeklyexam_exam');
                     let weEA2={};
                     try{weEA2=JSON.parse(RL_STORE.get(weExamKey2)||'{}');}catch(e){}
                     // 이 평가일의 주간 범위 찾기
@@ -2329,7 +2350,7 @@ function renderSchedule(s){
                         if(wDS2!==null){
                             const wk2=_vocabDeckId+'/'+wDS2+'_'+wDE2;
                             if(!weEA2[wk2]){
-                                const weTrainKey2='rl_vc_weeklyexam_train';
+                                const weTrainKey2=_vcKey('rl_vc_weeklyexam_train');
                                 let weTA2={};
                                 try{weTA2=JSON.parse(RL_STORE.get(weTrainKey2)||'{}');}catch(e){}
                                 const wPhase=weTA2[wk2]?'실전':'훈련';
@@ -2351,8 +2372,8 @@ function renderSchedule(s){
                 }
                 const vDayStart=Math.max(1,parseInt(_sdVocab.startVocabDay)||1)+lIdx*hpd;
                 if(vDayStart>vDeck.days.length)continue;
-                const vScKey='rl_vc_selfcheck';
-                const vReKey='rl_vc_realexam';
+                const vScKey=_vcKey('rl_vc_selfcheck');
+                const vReKey=_vcKey('rl_vc_realexam');
                 let vScAll2={},vReAll2={};
                 try{vScAll2=JSON.parse(RL_STORE.get(vScKey)||'{}');}catch(e){}
                 try{vReAll2=JSON.parse(RL_STORE.get(vReKey)||'{}');}catch(e){}
@@ -2770,7 +2791,7 @@ function executeSkipWeek(){
                             const adminRec={score:0,bestScore:0,passed:true,attempts:1,lastAttempt:new Date().toISOString(),adminCompleted:true,skipped:true,history:[{score:0,passed:true,date:Date.now(),admin:true,skipped:true}]};
                             try{
                                 // 데이체크 (이번 학습일에 포함된 DAY들만)
-                                const dcKey='rl_vc_daycheck';
+                                const dcKey=_vcKey('rl_vc_daycheck');
                                 const dcAll=JSON.parse(RL_STORE.get(dcKey)||'{}');
                                 const maxDay=Math.min(dayStart+vocabHomeworkPerDay-1,totalDays);
                                 for(let d=dayStart;d<=maxDay;d++){
@@ -2782,7 +2803,7 @@ function executeSkipWeek(){
                                 RL_STORE.set(dcKey,JSON.stringify(dcAll));
                                 
                                 // 셀프체크 (이번 학습일 키만)
-                                const scKey='rl_vc_selfcheck';
+                                const scKey=_vcKey('rl_vc_selfcheck');
                                 const scAll=JSON.parse(RL_STORE.get(scKey)||'{}');
                                 const scK=vocabDeckId+'/'+dayStart+'_'+vocabHomeworkPerDay;
                                 if(!scAll[scK]||!scAll[scK].passed){
@@ -2791,7 +2812,7 @@ function executeSkipWeek(){
                                 RL_STORE.set(scKey,JSON.stringify(scAll));
                                 
                                 // 실전평가 (이번 학습일 키만)
-                                const reKey='rl_vc_realexam';
+                                const reKey=_vcKey('rl_vc_realexam');
                                 const reAll=JSON.parse(RL_STORE.get(reKey)||'{}');
                                 if(!reAll[scK]){
                                     reAll[scK]={...adminRec,deckId:vocabDeckId,startDay:dayStart,homework:vocabHomeworkPerDay};
@@ -2838,12 +2859,12 @@ function executeSkipWeek(){
                         const adminRec={score:0,bestScore:0,passed:true,attempts:1,lastAttempt:new Date().toISOString(),adminCompleted:true,skipped:true,history:[{score:0,passed:true,date:Date.now(),admin:true,skipped:true}]};
                         const wk=vocabDeckId+'/'+weekDayStart+'_'+weekDayEnd;
                         // 주간훈련
-                        const wTrainKey='rl_vc_weeklyexam_train';
+                        const wTrainKey=_vcKey('rl_vc_weeklyexam_train');
                         const wTrainAll=JSON.parse(RL_STORE.get(wTrainKey)||'{}');
                         if(!wTrainAll[wk])wTrainAll[wk]={...adminRec,deckId:vocabDeckId,weekDayStart,weekDayEnd};
                         RL_STORE.set(wTrainKey,JSON.stringify(wTrainAll));
                         // 주간실전
-                        const wExamKey='rl_vc_weeklyexam_exam';
+                        const wExamKey=_vcKey('rl_vc_weeklyexam_exam');
                         const wExamAll=JSON.parse(RL_STORE.get(wExamKey)||'{}');
                         if(!wExamAll[wk])wExamAll[wk]={...adminRec,deckId:vocabDeckId,weekDayStart,weekDayEnd};
                         RL_STORE.set(wExamKey,JSON.stringify(wExamAll));
@@ -3029,8 +3050,8 @@ function renderTodayStatus(s){
             
             if(todaySess.isWeeklyTest){
                 // 주간평가 현황
-                const wTrainKey='rl_vc_weeklyexam_train';
-                const wExamKey='rl_vc_weeklyexam_exam';
+                const wTrainKey=_vcKey('rl_vc_weeklyexam_train');
+                const wExamKey=_vcKey('rl_vc_weeklyexam_exam');
                 let wTA={},wEA={};
                 try{wTA=JSON.parse(RL_STORE.get(wTrainKey)||'{}');}catch(e){}
                 try{wEA=JSON.parse(RL_STORE.get(wExamKey)||'{}');}catch(e){}
@@ -3051,8 +3072,8 @@ function renderTodayStatus(s){
                 const dayStart=vStartDay+vLessonIdx*hpd;
                 const dayEnd=Math.min(dayStart+hpd-1,vDeck.days.length);
                 if(dayStart<=vDeck.days.length){
-                    const scKey2='rl_vc_selfcheck';
-                    const reKey2='rl_vc_realexam';
+                    const scKey2=_vcKey('rl_vc_selfcheck');
+                    const reKey2=_vcKey('rl_vc_realexam');
                     let scA2={},reA2={};
                     try{scA2=JSON.parse(RL_STORE.get(scKey2)||'{}');}catch(e){}
                     try{reA2=JSON.parse(RL_STORE.get(reKey2)||'{}');}catch(e){}
@@ -3144,8 +3165,8 @@ function renderHorizontalProgress(s){
     
     // 점수 데이터 - 한 번만 파싱 (효율)
     let vcSelfAll = {}, vcExamAll = {};
-    try{ vcSelfAll = JSON.parse(RL_STORE.get('rl_vc_selfcheck') || '{}'); }catch(e){}
-    try{ vcExamAll = JSON.parse(RL_STORE.get('rl_vc_realexam') || '{}'); }catch(e){}
+    try{ vcSelfAll = JSON.parse(RL_STORE.get(_vcKey('rl_vc_selfcheck')) || '{}'); }catch(e){}
+    try{ vcExamAll = JSON.parse(RL_STORE.get(_vcKey('rl_vc_realexam')) || '{}'); }catch(e){}
     
     // 헬퍼: 점수 셀 (클릭 가능)
     const scoreCell = (score, onclick, color) => {
@@ -3494,9 +3515,9 @@ function _cumVocab(s){
     if(!deck||!(deck.days||[]).length) return '<p style="color:var(--text3);font-size:13px">단어장 데이터가 없습니다.</p>';
     
     // 저장소 로드
-    const dcKey='rl_vc_daycheck';
-    const scKey='rl_vc_selfcheck';
-    const reKey='rl_vc_realexam';
+    const dcKey=_vcKey('rl_vc_daycheck');
+    const scKey=_vcKey('rl_vc_selfcheck');
+    const reKey=_vcKey('rl_vc_realexam');
     let dcAll={},scAll={},reAll={},gameAll={};
     try{dcAll=JSON.parse(RL_STORE.get(dcKey)||'{}');}catch(e){}
     try{scAll=JSON.parse(RL_STORE.get(scKey)||'{}');}catch(e){}
@@ -7031,7 +7052,7 @@ function openVocabTrain(deckId,startDay,homeworkPerDay){
     let resumeIdx = 1;
     if(!isPv){
         try{
-            const dcAll = JSON.parse(RL_STORE.get('rl_vc_daycheck')||'{}');
+            const dcAll = JSON.parse(RL_STORE.get(_vcKey('rl_vc_daycheck'))||'{}');
             // startDay부터 순서대로 검사: 데이체크 통과한 day는 건너뜀
             for(let off=0; off<homeworkPerDay; off++){
                 const dNum = startDay + off;
@@ -7104,7 +7125,7 @@ function adminCompleteVocabTrain(deckId,dayStart,homeworkPerDay,_noRender){
     const deck=vIdx[deckId];
     
     // 1) 데이체크 통과
-    const dcKey='rl_vc_daycheck';
+    const dcKey=_vcKey('rl_vc_daycheck');
     const dcAll=JSON.parse(RL_STORE.get(dcKey)||'{}');
     if(deck&&deck.days){
         const maxDay=Math.min(dayStart+homeworkPerDay-1,deck.days.length);
@@ -7118,7 +7139,7 @@ function adminCompleteVocabTrain(deckId,dayStart,homeworkPerDay,_noRender){
     RL_STORE.set(dcKey,JSON.stringify(dcAll));
     
     // 2) 이전 + 현재 셀프체크 통과
-    const scKey='rl_vc_selfcheck';
+    const scKey=_vcKey('rl_vc_selfcheck');
     const scAll=JSON.parse(RL_STORE.get(scKey)||'{}');
     for(let ps=globalStartDay;ps<=dayStart;ps+=homeworkPerDay){
         const scK=deckId+'/'+ps+'_'+homeworkPerDay;
@@ -7127,7 +7148,7 @@ function adminCompleteVocabTrain(deckId,dayStart,homeworkPerDay,_noRender){
     RL_STORE.set(scKey,JSON.stringify(scAll));
     
     // 3) 이전 학습일들의 실전평가 통과 (현재 제외 — 훈련만 완료이므로)
-    const reKey='rl_vc_realexam';
+    const reKey=_vcKey('rl_vc_realexam');
     const reAll=JSON.parse(RL_STORE.get(reKey)||'{}');
     for(let ps=globalStartDay;ps<dayStart;ps+=homeworkPerDay){
         const reK=deckId+'/'+ps+'_'+homeworkPerDay;
@@ -7149,7 +7170,7 @@ function adminCompleteVocabExam(deckId,dayStart,homeworkPerDay,_noRender){
     // 현재 실전평가 완료
     const pid=getPreviewId();
     const adminRec={score:0,bestScore:0,passed:true,attempts:1,lastAttempt:new Date().toISOString(),adminCompleted:true,history:[{score:0,date:Date.now(),admin:true}]};
-    const reKey='rl_vc_realexam';
+    const reKey=_vcKey('rl_vc_realexam');
     const reAll=JSON.parse(RL_STORE.get(reKey)||'{}');
     const k=deckId+'/'+dayStart+'_'+homeworkPerDay;
     if(!reAll[k]) reAll[k]={...adminRec,deckId:deckId,startDay:dayStart,homework:homeworkPerDay};
@@ -7167,8 +7188,8 @@ function _adminCompleteAllPrevWeekly(deckId,beforeDayStart,homeworkPerDay,global
     const daysPerWeek=((sd.days||[]).length-1)||2; // 학습일 수 (평가일 제외)
     const daysPerWeekTotal=daysPerWeek*homeworkPerDay; // 한 주에 DAY 수
     
-    const wTrainKey='rl_vc_weeklyexam_train';
-    const wExamKey='rl_vc_weeklyexam_exam';
+    const wTrainKey=_vcKey('rl_vc_weeklyexam_train');
+    const wExamKey=_vcKey('rl_vc_weeklyexam_exam');
     const wTrainAll=JSON.parse(RL_STORE.get(wTrainKey)||'{}');
     const wExamAll=JSON.parse(RL_STORE.get(wExamKey)||'{}');
     
@@ -7197,7 +7218,7 @@ function adminCompleteWeeklyTrain(deckId,weekDayStart,weekDayEnd,_noRender){
     }
     
     // 주간평가 훈련 완료
-    const key='rl_vc_weeklyexam_train';
+    const key=_vcKey('rl_vc_weeklyexam_train');
     const all=JSON.parse(RL_STORE.get(key)||'{}');
     const wk=deckId+'/'+weekDayStart+'_'+weekDayEnd;
     all[wk]={...adminRec,lastScore:0,lastPassed:true,lastDate:Date.now()};
@@ -7213,7 +7234,7 @@ function adminCompleteWeeklyExam(deckId,weekDayStart,weekDayEnd){
     // 실전 완료
     const pid=getPreviewId();
     const adminRec={score:0,bestScore:0,passed:true,attempts:1,lastAttempt:new Date().toISOString(),adminCompleted:true,history:[{score:0,date:Date.now(),admin:true}]};
-    const key='rl_vc_weeklyexam_exam';
+    const key=_vcKey('rl_vc_weeklyexam_exam');
     const all=JSON.parse(RL_STORE.get(key)||'{}');
     const wk=deckId+'/'+weekDayStart+'_'+weekDayEnd;
     all[wk]={...adminRec,lastScore:0,lastPassed:true,lastDate:Date.now()};

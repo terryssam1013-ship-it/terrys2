@@ -1695,6 +1695,10 @@ function _dayCheckStorageKey(){
     if(isPreview){
         return 'rl_pv_'+studentId+'_vc_daycheck';
     }
+    try{
+        const u=JSON.parse(localStorage.getItem('rl_current_user')||'null');
+        if(u&&u.id) return 'rl_vc_daycheck_'+u.id;
+    }catch(e){}
     return 'rl_vc_daycheck';
 }
 
@@ -2076,13 +2080,15 @@ function _checkAllHomeworkDaysPassed(){
 // ========================================================================
 
 function _selfCheckStorageKey(){
-    if(typeof isPreview==='function'&&isPreview){
-        // isPreview는 변수 (URL param 기반)
-    }
     if(isPreview){
         const pid=typeof getPreviewId==='function'?getPreviewId():'pv';
         return 'rl_pv_'+pid+'_vc_selfcheck';
     }
+    // 학생 본인 ID로 분리 → 학생 간 기록 섞임 방지
+    try{
+        const u=JSON.parse(localStorage.getItem('rl_current_user')||'null');
+        if(u&&u.id) return 'rl_vc_selfcheck_'+u.id;
+    }catch(e){}
     return 'rl_vc_selfcheck';
 }
 
@@ -2421,6 +2427,10 @@ function _realExamStorageKey(){
         const pid=typeof getPreviewId==='function'?getPreviewId():'pv';
         return 'rl_pv_'+pid+'_vc_realexam';
     }
+    try{
+        const u=JSON.parse(localStorage.getItem('rl_current_user')||'null');
+        if(u&&u.id) return 'rl_vc_realexam_'+u.id;
+    }catch(e){}
     return 'rl_vc_realexam';
 }
 
@@ -2693,6 +2703,10 @@ function _weeklyExamStorageKey(mode){
         const pid=typeof getPreviewId==='function'?getPreviewId():'pv';
         return 'rl_pv_'+pid+'_'+base;
     }
+    try{
+        const u=JSON.parse(localStorage.getItem('rl_current_user')||'null');
+        if(u&&u.id) return 'rl_'+base+'_'+u.id;
+    }catch(e){}
     return 'rl_'+base;
 }
 
@@ -3418,7 +3432,7 @@ async function initVocabLearn(){
     //    URL의 day/idx 파라미터에 의존하지 않고, 저장된 통과 기록으로 현재 위치 판단
     if(!isPreview){
         try{
-            const dcAll=JSON.parse(RL_STORE.get('rl_vc_daycheck')||'{}');
+            const dcAll=JSON.parse(RL_STORE.get(_dayCheckStorageKey())||'{}');
             
             // (A) 아직 데이체크 통과 못 한 첫 DAY 찾기
             let firstUnpassedDayNum=null;
