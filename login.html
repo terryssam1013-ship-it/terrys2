@@ -218,7 +218,28 @@ async function login(){
     
     if(validPassword !== pwd){showError('아이디 또는 비밀번호가 올바르지 않습니다');return;}
     
-    // user 정보가 로컬에 없으면 최소 정보로 구성 (Firebase 비번으로 인증된 학생)
+    // user 정보가 로컬에 없으면(다른 기기) Firebase 프로필에서 받아옴
+    //    → 이름·교재·레벨·시작일 등이 복원되어 숙제·누적현황이 정상 표시됨
+    if(!user){
+        try{
+            const pr = await fetch(PWD_FB_URL + '/student_profiles/' + encodeURIComponent(uid) + '.json?_t=' + Date.now(), {cache:'no-store'});
+            if(pr.ok){
+                const profile = await pr.json();
+                if(profile && typeof profile === 'object'){
+                    user = profile;
+                    if(!user.role) user.role = 'student';
+                    if(!user.name) user.name = uid;
+                    // 받아온 프로필을 로컬 rl_users에도 저장 (다음 로드부터 빠르게)
+                    try{
+                        const allUsers = JSON.parse(RL_STORE.get('rl_users')||'{}');
+                        allUsers[uid] = Object.assign({}, profile, {password: validPassword});
+                        RL_STORE.set('rl_users', JSON.stringify(allUsers));
+                    }catch(e){}
+                }
+            }
+        }catch(e){ /* Firebase 안 닿으면 아래 최소정보로 폴백 */ }
+    }
+    // 그래도 없으면 최소 정보로 구성 (Firebase 비번으로만 인증된 경우)
     if(!user){
         user = {role:'student', name:uid};
     }

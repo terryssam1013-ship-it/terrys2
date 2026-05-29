@@ -4637,6 +4637,9 @@ function saveStudent(editId){
     LS.s('users',users);
     // 🔐 비번 변경됨 → Firebase에도 동기화 (학생이 다른 기기에서 새 비번으로 즉시 로그인 가능)
     syncPasswordToFirebase(id, pwd);
+    // 👤 학생 프로필(이름·교재·레벨·시작일 등)도 Firebase에 동기화
+    //    → 학생이 다른 기기(폰)에서 로그인해도 이름·교재·숙제가 정상 표시됨
+    syncProfileToFirebase(id, record);
     // 신규 학생 (또는 grammar 진도 미초기화 학생) — startGrammarPoint를 currentPoint로 자동 초기화
     // → 학생 본인 로그인·미리보기 모두에서 첫 학습일에 "학습하기" 버튼이 정상 표시됨
     if(startGrammarPoint>0){
@@ -4653,7 +4656,7 @@ function saveStudent(editId){
     }
     closeModal();render();
 }
-function deleteStudent(id){if(!confirm(id+' 학생을 삭제하시겠습니까?'))return;const u=LS.g('users')||{};delete u[id];LS.s('users',u);deletePasswordFromFirebase(id);render();}
+function deleteStudent(id){if(!confirm(id+' 학생을 삭제하시겠습니까?'))return;const u=LS.g('users')||{};delete u[id];LS.s('users',u);deletePasswordFromFirebase(id);deleteProfileFromFirebase(id);render();}
 
 // ========== 🔐 비밀번호 관리 ==========
 const ADMIN_PWD_FB_URL = 'https://terrys-d643a-default-rtdb.firebaseio.com';
@@ -4683,6 +4686,29 @@ function deletePasswordFromFirebase(studentId){
     fetch(ADMIN_PWD_FB_URL + '/student_passwords/' + encodeURIComponent(studentId) + '.json', {
         method: 'DELETE'
     }).catch(e => console.warn('Firebase 비번 삭제 실패:', e));
+}
+
+// 👤 Firebase에 학생 프로필 저장 (이름·교재·레벨·시작일 등)
+//    학생이 다른 기기에서 로그인 시 이 프로필을 받아와 이름·교재·숙제가 정상 표시됨.
+//    비밀번호는 별도 경로(/student_passwords)에 있으므로 프로필에서는 제외.
+function syncProfileToFirebase(studentId, record){
+    try{
+        const profile = Object.assign({}, record);
+        delete profile.password; // 비번은 프로필에 노출하지 않음
+        profile._updatedAt = Date.now();
+        fetch(ADMIN_PWD_FB_URL + '/student_profiles/' + encodeURIComponent(studentId) + '.json', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(profile)
+        }).catch(e => console.warn('Firebase 프로필 동기화 실패:', e));
+    }catch(e){ console.warn('프로필 동기화 준비 실패:', e); }
+}
+
+// 학생 삭제 시 Firebase 프로필도 정리
+function deleteProfileFromFirebase(studentId){
+    fetch(ADMIN_PWD_FB_URL + '/student_profiles/' + encodeURIComponent(studentId) + '.json', {
+        method: 'DELETE'
+    }).catch(e => console.warn('Firebase 프로필 삭제 실패:', e));
 }
 
 // 🔐 전체 학생 비번 일괄 재설정
