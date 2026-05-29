@@ -923,9 +923,12 @@ function getCurrentGrammarPoint(){
     try{
         const u=getUser();if(!u)return null;
         const sid=u.id;
+        const startPt=parseInt(getStudentData()?.startGrammarPoint||u.startGrammarPoint||'1')||1;
         const v=JSON.parse(RL_STORE.get('rl_gr_'+sid+'_progress')||'{}');
-        return v.currentPoint||getStudentData()?.startGrammarPoint||null;
-    }catch(e){return getStudentData()?.startGrammarPoint||null;}
+        const cur=parseInt(v.currentPoint)||0;
+        // 진도가 시작점보다 작으면(아직 학습 페이지에서 진도 갱신 전이거나 초기화 직후) 시작점을 기준으로.
+        return Math.max(cur, startPt);
+    }catch(e){return parseInt(getStudentData()?.startGrammarPoint||'1')||1;}
 }
 function getGrammarRecords(){
     try{
@@ -962,12 +965,17 @@ function getGrammarRecords(){
                 if(!k||!k.startsWith(prefix))return;
                 let sub=k.slice(prefix.length);
                 if(sub.startsWith('_migrated'))return;
-                if(innerPrefix&&sub.startsWith(innerPrefix)){
+                if(innerPrefix){
+                    // 레벨이 정해진 학생(나모그/문마중 Ln)은 그 레벨 prefix가 붙은 키만 읽는다.
+                    //   prefix 없는 옛 키나 다른 레벨 키는 무시 → 이전 테스트 잔여/타 교재 데이터 오염 방지.
+                    if(!sub.startsWith(innerPrefix)) return;
                     sub=sub.slice(innerPrefix.length);
-                }
-                else if(sub.startsWith('L1_')||sub.startsWith('L2_')||sub.startsWith('L3_')
+                } else {
+                    // 레벨 미상(구버전): 다른 레벨 prefix 키는 제외, prefix 없는 옛 키만 허용
+                    if(sub.startsWith('L1_')||sub.startsWith('L2_')||sub.startsWith('L3_')
                        ||sub.startsWith('NAMOG1_')||sub.startsWith('NAMOG2_')){
-                    return;
+                        return;
+                    }
                 }
                 try{
                     const raw=readVal(k);
@@ -3122,6 +3130,9 @@ function renderHorizontalProgress(s){
     const grStart = parseInt(s.startGrammarPoint) || 1;
     const grStartDateStr = s.startGrammarDate;
     const grStartDate = grStartDateStr ? new Date(grStartDateStr + 'T00:00:00') : null;
+    // grammarwise가 저장하는 실제 키(rl_gr_<sid>_NAMOG<lv>_sc_<ch> 등)를 읽어주는 통합 함수.
+    //   미리보기 키·localStorage까지 모두 스캔하므로 옛 키 직접 읽기보다 정확.
+    const _gRec = getGrammarRecords();
     
     // 단어 데이터
     const vIdx = LS.g('vocab_index') || {};
@@ -3226,16 +3237,35 @@ function renderHorizontalProgress(s){
                 const startUnitG = Math.floor((grStart-1)/4) + 1;
                 const rowUnit = startUnitG + grLessonIdx;
                 // 문법 셀프/실전 점수 가져오기
-                // 키 패턴: rl_gr_selfcheck_<book>_<unit>, rl_gr_exam_<book>_<unit>
+                //   1순위: getGrammarRecords()의 selfChecks/exams[chapter] (grammarwise 새 키)
+                //   2순위: 옛 키 rl_gr_selfcheck_<book>_<unit> (구버전 호환)
                 let grSelf = null, grExam = null;
                 try{
-                    const selfRaw = RL_STORE.get(`rl_gr_selfcheck_${grammarBook}_${rowUnit}`);
-                    if(selfRaw){ const r = JSON.parse(selfRaw); grSelf = r?.bestScore ?? r?.score ?? null; }
+                    const scD = _gRec.selfChecks?.[rowUnit];
+                    if(scD && Array.isArray(scD.attempts) && scD.attempts.length>0){
+                        // 최고 점수 (pct) 사용
+                        grSelf = scD.attempts.reduce((m,a)=>Math.max(m, a.pct ?? a.score ?? 0), 0);
+                    }
                 }catch(e){}
                 try{
-                    const examRaw = RL_STORE.get(`rl_gr_exam_${grammarBook}_${rowUnit}`);
-                    if(examRaw){ const r = JSON.parse(examRaw); grExam = r?.bestScore ?? r?.score ?? null; }
+                    const exD = _gRec.exams?.[rowUnit];
+                    if(exD && Array.isArray(exD.attempts) && exD.attempts.length>0){
+                        grExam = exD.attempts.reduce((m,a)=>Math.max(m, a.pct ?? a.score ?? 0), 0);
+                    }
                 }catch(e){}
+                // 옛 키 fallback
+                if(grSelf===null){
+                    try{
+                        const selfRaw = RL_STORE.get(`rl_gr_selfcheck_${grammarBook}_${rowUnit}`);
+                        if(selfRaw){ const r = JSON.parse(selfRaw); grSelf = r?.bestScore ?? r?.score ?? null; }
+                    }catch(e){}
+                }
+                if(grExam===null){
+                    try{
+                        const examRaw = RL_STORE.get(`rl_gr_exam_${grammarBook}_${rowUnit}`);
+                        if(examRaw){ const r = JSON.parse(examRaw); grExam = r?.bestScore ?? r?.score ?? null; }
+                    }catch(e){}
+                }
                 
                 grammarHTML = `
                     <td style="padding:6px;border:1px solid #E5E7EB;text-align:center;font-weight:600">Ch ${rowUnit}</td>
