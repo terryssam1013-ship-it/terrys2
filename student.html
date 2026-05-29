@@ -2340,13 +2340,22 @@ function renderFlowWeek(ctx){
 
     // 카드 빌더
     function card(subj, mode){
-        // mode: 'self-active' | 'exam-locked' | 'exam-active' | 'done'
+        // mode: 'self-active' | 'self-done' | 'exam-locked' | 'exam-active' | 'done'
         const hw=subj.hw;
-        const title = hw ? hw.label : `${subj.name} 완료`;
-        const sub = hw ? hw.sub : '실전평가까지 완료했어요';
+        let title, sub;
+        if(mode==='self-done'){
+            // 셀프 끝난 과목 (실전은 아직 안 봄): 과목명 + 셀프 완료
+            title = `${subj.name.replace(/^[^ ]+ /,'')} 셀프체크 완료`;
+            sub = '실전평가는 학원에서 진행해요';
+        } else {
+            title = hw ? hw.label : `${subj.name} 완료`;
+            sub = hw ? hw.sub : '실전평가까지 완료했어요';
+        }
         let cta, onclick, locked=false, faded=false;
         if(mode==='self-active'){
             cta='시작 →'; onclick=hw.onclick;
+        } else if(mode==='self-done'){
+            cta='✓ 셀프 완료'; onclick=''; faded=true;
         } else if(mode==='exam-locked'){
             cta='🔒 실전평가'; onclick=''; locked=true;
         } else if(mode==='exam-active'){
@@ -2388,12 +2397,12 @@ function renderFlowWeek(ctx){
 
     // ── 셀프체크 단계 ──
     if(flow.phase==='selfcheck'){
-        // 셀프 완료 = 'exam'(셀프끝, 실전대기) 또는 'done'(실전까지 끝 — 예외적)
+        // 셀프 완료 = 'exam'(셀프끝, 실전대기) 또는 'done'(실전까지 끝)
         const selfAllDone = subjects.every(x=>x.st==='exam'||x.st==='done');
+        // 셀프 진행 중인 과목만 카드로 표시 (순서 자유). 실전은 아직 숨김.
         subjects.forEach(x=>{
-            if(x.st==='self') body+=card(x,'self-active');           // 셀프체크 진행
-            else if(x.st==='exam') body+=card(x,'exam-locked');      // 셀프 끝, 실전 잠금(회색)
-            else body+=card(x,'done');                                // 이미 완료
+            if(x.st==='self') body+=card(x,'self-active');
+            else body+=card(x,'self-done'); // 셀프 끝난 과목 = 초록 체크 (실전 버튼은 숨김)
         });
         if(selfAllDone){
             footer = `<div style="text-align:center;margin-top:16px">
@@ -2401,7 +2410,7 @@ function renderFlowWeek(ctx){
                 <div style="font-size:12px;color:var(--text3);margin-top:8px">셀프체크를 모두 마쳤어요! 버튼을 누르면 실전평가가 열립니다 (학원에서 진행)</div>
             </div>`;
         } else {
-            footer = `<div style="text-align:center;margin-top:14px;font-size:13px;color:var(--text3)">📝 세 과목 셀프체크를 모두 끝내면 [숙제 완료] 버튼이 열려요</div>`;
+            footer = `<div style="text-align:center;margin-top:14px;font-size:13px;color:var(--text3)">📝 세 과목 셀프체크를 모두 끝내면 [숙제 완료] 버튼이 열려요 (순서는 자유)</div>`;
         }
         return wrapFlow(body+footer);
     }
