@@ -395,7 +395,7 @@ let state={
 // ========== vocabFlow 설정 가져오기 (admin 설정 반영) ==========
 function getVocabFlowSettings(){
     const defaults={
-        gamesRequired:1,
+        gamesRequired:0,
         dayCheck:{target:80, ratio:{meaning:30,word:30,blank:40}},
         selfCheck:{total:30, target:80, ratio:{meaning:30,word:30,blank:40}},
         realExam:{total:30, target:80, ratio:{meaning:30,word:30,blank:40}},
@@ -405,8 +405,8 @@ function getVocabFlowSettings(){
         const settings=JSON.parse(RL_STORE.get('rl_settings')||'{}');
         const vf=settings.vocabFlow||{};
         return {
-            // 최소 1개 게임은 무조건 완료해야 데이체크 가능 (어드민 설정과 무관)
-            gamesRequired: Math.max(1, vf.gamesRequired!==undefined?vf.gamesRequired:defaults.gamesRequired),
+            // 게임은 선택 — 어드민 설정값 그대로 사용, 미설정 시 0개(게임 없이 데이체크 진입)
+            gamesRequired: Math.max(0, vf.gamesRequired!==undefined?vf.gamesRequired:defaults.gamesRequired),
             dayCheck:{
                 target: vf.dayCheck?.target!==undefined?vf.dayCheck.target:defaults.dayCheck.target,
                 ratio: vf.dayCheck?.ratio||defaults.dayCheck.ratio
@@ -775,9 +775,9 @@ function renderSummary(){
             const dcUnlocked=gamesDone>=gamesNeeded;
             const dcScore=getDayCheckScore(state.deck.id,state.day.id);
             return `
-            <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border);font-size:14px;font-weight:700;color:var(--green-d)">🔓 게임 모드 잠금해제!</div>
+            <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border);font-size:14px;font-weight:700;color:var(--green-d)">${gamesNeeded>0?'🔓 게임 모드 잠금해제!':'🎮 게임으로 복습하기 (선택)'}</div>
             <div style="margin-top:8px;font-size:12px;color:var(--gray);text-align:center">
-                ${gamesNeeded>0?`데이체크 진입까지 게임 ${gamesDone}/${gamesNeeded}개 완료`:'게임은 모두 선택입니다'}
+                ${gamesNeeded>0?`데이체크 진입까지 게임 ${gamesDone}/${gamesNeeded}개 완료`:'게임은 선택이에요. 바로 데이체크로 가도 됩니다'}
             </div>
             <div style="margin-top:12px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:480px;margin-left:auto;margin-right:auto">
                 <button class="nav-btn nav-btn-primary" onclick="startSpeedGame()" style="background:#F59E0B;border-color:#F59E0B">⚡ 속도전${state.gamesCompleted.has('speed')?' ✓':''}</button>
@@ -1979,43 +1979,39 @@ function renderDayCheckResult(){
     const total=dc.questions.length;
     const correct=dc.answers.filter(a=>a.correct).length;
     const score=Math.round(correct/total*100);
-    const passed=score>=vfs.dayCheck.target;
+    // 데이체크는 커트라인 없음 — 끝까지 풀면 무조건 통과(완료). 점수는 참고용으로만 기록.
+    const passed=true;
+    const scoreReached=score>=vfs.dayCheck.target; // 목표 도달 여부 (표시용)
     
-    // 점수 저장
-    saveDayCheckScore(state.deck.id,state.day.id,score,passed);
+    // 점수 저장 (passed=true로 저장 → 셀프체크 진입 자격)
+    saveDayCheckScore(state.deck.id,state.day.id,score,true);
     clearDayCheckProgress(); // 완료 → 진행 삭제 (재시험은 새 문제로)
     
     const wrongs=dc.answers.filter(a=>!a.correct);
     
-    // 다음 단계 버튼 결정
+    // 다음 단계 버튼 결정 (데이체크는 끝까지 풀면 항상 다음 단계로)
     // 한 수업에 여러 DAY (homework) 진행 시:
-    // - 통과 + 마지막 DAY가 아니면 → 다음 DAY 학습 버튼
-    // - 통과 + 마지막 DAY면 → 셀프체크 가능 여부 체크
+    // - 마지막 DAY가 아니면 → 다음 DAY 학습 버튼
+    // - 마지막 DAY면 → 셀프체크 버튼
     let nextStepHTML='';
-    console.log('[단어 데이체크 완료] homeworkSize=',homeworkSize,'homeworkIdx=',homeworkIdx,'startDayNum=',startDayNum,'passed=',passed,'→ 분기:',(passed&&homeworkIdx<homeworkSize)?'다음DAY':'셀프체크');
-    if(passed){
-        if(homeworkIdx<homeworkSize){
-            // 다음 DAY 학습 진행
-            const nextDayNum=startDayNum+homeworkIdx; // homeworkIdx가 1이면 startDay+1
-            const nextDayObj=state.deck.days[nextDayNum-1];
-            if(nextDayObj){
-                const nextUrl=`vocab-learn.html?deck=${encodeURIComponent(state.deck.id)}&day=${encodeURIComponent(nextDayObj.id)}&homework=${homeworkSize}&idx=${homeworkIdx+1}&startDay=${startDayNum}${isPreview?'&preview=1':''}`;
-                nextStepHTML=`<button class="nav-btn nav-btn-primary" onclick="location.href='${nextUrl}'" style="background:#10B981;border-color:#10B981;color:#fff;width:100%;padding:14px;font-size:15px">📖 DAY${nextDayNum} 학습 시작 →</button>`;
-            }
-        }else{
-            // 마지막 DAY 통과 — 셀프체크 가능 여부 확인
-            // homework=1이면 startDayNum만, homework=2면 startDayNum, startDayNum+1 모두 통과해야 함
-            const allDaysPassed=_checkAllHomeworkDaysPassed();
-            if(allDaysPassed){
-                nextStepHTML=`<button class="nav-btn nav-btn-primary" onclick="startSelfCheck()" style="background:#A855F7;border-color:#A855F7;color:#fff;width:100%;padding:14px;font-size:15px">📝 셀프체크 시작 (${homeworkSize}개 DAY 누적)</button>`;
-            }
+    console.log('[단어 데이체크 완료] homeworkSize=',homeworkSize,'homeworkIdx=',homeworkIdx,'startDayNum=',startDayNum,'score=',score,'→ 분기:',(homeworkIdx<homeworkSize)?'다음DAY':'셀프체크');
+    if(homeworkIdx<homeworkSize){
+        // 다음 DAY 학습 진행
+        const nextDayNum=startDayNum+homeworkIdx; // homeworkIdx가 1이면 startDay+1
+        const nextDayObj=state.deck.days[nextDayNum-1];
+        if(nextDayObj){
+            const nextUrl=`vocab-learn.html?deck=${encodeURIComponent(state.deck.id)}&day=${encodeURIComponent(nextDayObj.id)}&homework=${homeworkSize}&idx=${homeworkIdx+1}&startDay=${startDayNum}${isPreview?'&preview=1':''}`;
+            nextStepHTML=`<button class="nav-btn nav-btn-primary" onclick="location.href='${nextUrl}'" style="background:#10B981;border-color:#10B981;color:#fff;width:100%;padding:14px;font-size:15px">📖 DAY${nextDayNum} 학습 시작 →</button>`;
         }
+    }else{
+        // 마지막 DAY 완료 → 셀프체크 버튼 (커트라인 없이 항상 표시)
+        nextStepHTML=`<button class="nav-btn nav-btn-primary" onclick="startSelfCheck()" style="background:#A855F7;border-color:#A855F7;color:#fff;width:100%;padding:14px;font-size:15px">📝 셀프체크 시작 (${homeworkSize>1?homeworkSize+'개 DAY 누적':'테스트'})</button>`;
     }
     
     document.getElementById('app').innerHTML=`<div class="summary-screen">
-        <div class="summary-emoji">${passed?'🎉':'📝'}</div>
-        <div class="summary-title">${passed?'데이체크 통과!':'재시험이 필요해요'}</div>
-        <div class="summary-sub">${score}점 ${passed?'· 목표':'· 목표'} ${vfs.dayCheck.target}점</div>
+        <div class="summary-emoji">${scoreReached?'🎉':'✅'}</div>
+        <div class="summary-title">데이체크 완료!</div>
+        <div class="summary-sub">${score}점 · ${scoreReached?`목표 ${vfs.dayCheck.target}점 달성!`:'이제 셀프체크에 도전해요'}</div>
         <div class="summary-stats">
             <div class="summary-stat"><div class="summary-stat-num">${total}</div><div class="summary-stat-label">전체</div></div>
             <div class="summary-stat"><div class="summary-stat-num" style="color:var(--green-d)">${correct}</div><div class="summary-stat-label">정답</div></div>
@@ -2048,8 +2044,9 @@ function renderDayCheckResult(){
         
         <div class="summary-cta" style="margin-top:20px;flex-direction:column;gap:8px">
             ${nextStepHTML}
-            ${!passed?`<button class="nav-btn nav-btn-primary" onclick="startDayCheck()" style="background:#3B82F6;border-color:#3B82F6;width:100%">↺ 재시험</button>`:''}
-            <button class="nav-btn" onclick="state.dayCheck=null;state.done=true;render()" style="width:100%">📋 학습 결과 화면</button>
+            <div style="font-size:12px;color:var(--gray);text-align:center;margin:2px 0">자신 없으면 아래로 더 연습해도 좋아요 (선택)</div>
+            <button class="nav-btn" onclick="startDayCheck()" style="width:100%">↺ 데이체크 다시 풀기</button>
+            <button class="nav-btn" onclick="state.dayCheck=null;state.done=true;render()" style="width:100%">📋 학습 결과 화면 (플래시·게임)</button>
             <button class="nav-btn" onclick="goBack()" style="width:100%">📅 학습일정으로</button>
         </div>
     </div>`;
