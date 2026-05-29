@@ -1137,7 +1137,10 @@ function getFlowState(){
 function setFlowState(obj){
     try{
         const u=getUser(); if(!u) return;
-        RL_STORE.set('rl_flow_'+u.id, JSON.stringify(obj||{phase:'selfcheck'}));
+        const json=JSON.stringify(obj||{phase:'selfcheck'});
+        RL_STORE.set('rl_flow_'+u.id, json);
+        // 별도 페이지(grammarwise-*.html 등)는 localStorage만 보므로 거기에도 직접 기록
+        try{ localStorage.setItem('rl_flow_'+u.id, json); }catch(e){}
     }catch(e){}
 }
 // [숙제 완료] 클릭 → 실전평가 잠금 해제
@@ -1155,6 +1158,110 @@ function flowGoNextDay(){
     const st=getFlowState()||{};
     st.phase='selfcheck';
     setFlowState(st);
+    render();
+}
+
+/* ────────────────────────────────────────────────────────────
+   🧪 관리자 자동완료 (새 흐름 전용) — 체인 없음, 현재 항목 1개만 기록
+   카드가 가진 정확한 식별자(unit/deck/dayStart 등)로 그 항목만 통과 처리.
+   기존 adminCompleteVocabTrain 같은 "이전 학습일 줄줄이 통과" 체인은 절대 호출 안 함.
+   ──────────────────────────────────────────────────────────── */
+const _FLOW_ADMIN_REC = ()=>({score:0,bestScore:0,passed:true,attempts:1,lastAttempt:new Date().toISOString(),adminCompleted:true,history:[{score:0,passed:true,date:Date.now(),admin:true}]});
+
+// 리딩 셀프(훈련) 완료 — 그 Unit 하나만
+function flowAdminReadingSelf(unitKey){
+    if(!isPreview())return;
+    const uid=getUser().id;
+    const bookName=(getStudentData()||{}).textbooks?.reading;
+    const lsKey='train_'+uid+'_'+bookName+'_'+unitKey;
+    if(!LS.g(lsKey)) LS.s(lsKey,{completed:true,adminCompleted:true,date:Date.now(),score:0});
+    render();
+}
+// 리딩 실전 완료 — 그 Unit 하나만
+function flowAdminReadingExam(unitKey){
+    if(!isPreview())return;
+    const uid=getUser().id;
+    const bookName=(getStudentData()||{}).textbooks?.reading;
+    const lsKey='assess_'+uid+'_'+bookName+'_'+unitKey;
+    if(!LS.g(lsKey)) LS.s(lsKey,{score:0,adminCompleted:true,date:Date.now()});
+    render();
+}
+// 문법 셀프(셀프체크) 완료 — 그 Unit 하나만
+function flowAdminGrammarSelf(unitNum){
+    if(!isPreview())return;
+    try{ adminCompleteGrammarTrain(unitNum); }catch(e){ console.warn('문법 셀프 완료 실패',e); render(); }
+}
+// 문법 실전 완료 — 그 Unit 하나만
+function flowAdminGrammarExam(unitNum){
+    if(!isPreview())return;
+    try{ adminCompleteGrammarExam(unitNum); }catch(e){ console.warn('문법 실전 완료 실패',e); render(); }
+}
+// 단어 셀프(셀프체크) 완료 — 그 DAY 묶음 하나만 (체인 없음)
+function flowAdminVocabSelf(deckId,dayStart,homeworkPerDay){
+    if(!isPreview())return;
+    const rec=_FLOW_ADMIN_REC();
+    // 데이체크: 이 숙제 범위의 day들만
+    try{
+        const vIdx=LS.g('vocab_index')||{};
+        const deck=vIdx[deckId];
+        const dcKey='rl_vc_daycheck';
+        const dcAll=JSON.parse(RL_STORE.get(dcKey)||'{}');
+        if(deck&&deck.days){
+            const maxDay=Math.min(dayStart+homeworkPerDay-1,deck.days.length);
+            for(let d=dayStart;d<=maxDay;d++){
+                const dayObj=deck.days[d-1];
+                if(!dayObj)continue;
+                const dk=deckId+'/'+dayObj.id;
+                if(!dcAll[dk]||!dcAll[dk].passed) dcAll[dk]={...rec};
+            }
+        }
+        RL_STORE.set(dcKey,JSON.stringify(dcAll));
+    }catch(e){}
+    // 셀프체크: 이 묶음 키 하나만
+    try{
+        const scKey='rl_vc_selfcheck';
+        const scAll=JSON.parse(RL_STORE.get(scKey)||'{}');
+        const scK=deckId+'/'+dayStart+'_'+homeworkPerDay;
+        scAll[scK]={...rec,deckId:deckId,startDay:dayStart,homework:homeworkPerDay};
+        RL_STORE.set(scKey,JSON.stringify(scAll));
+    }catch(e){}
+    render();
+}
+// 단어 실전 완료 — 그 DAY 묶음 하나만
+function flowAdminVocabExam(deckId,dayStart,homeworkPerDay){
+    if(!isPreview())return;
+    const rec=_FLOW_ADMIN_REC();
+    try{
+        const reKey='rl_vc_realexam';
+        const reAll=JSON.parse(RL_STORE.get(reKey)||'{}');
+        const k=deckId+'/'+dayStart+'_'+homeworkPerDay;
+        reAll[k]={...rec,deckId:deckId,startDay:dayStart,homework:homeworkPerDay};
+        RL_STORE.set(reKey,JSON.stringify(reAll));
+    }catch(e){}
+    render();
+}
+// 리딩 주간평가 완료 (셀프+실전 한번에)
+function flowAdminReadingWeekly(weekId){
+    if(!isPreview())return;
+    try{ adminCompleteReadingWeekly(weekId,'exam'); }catch(e){ render(); }
+}
+// 단어 주간평가 완료 (그 주차 묶음만, train+exam 한번에)
+function flowAdminVocabWeekly(deckId,wStart,wEnd){
+    if(!isPreview())return;
+    const rec=_FLOW_ADMIN_REC();
+    const wk=deckId+'/'+wStart+'_'+wEnd;
+    try{
+        const tk='rl_vc_weeklyexam_train';
+        const tAll=JSON.parse(RL_STORE.get(tk)||'{}');
+        tAll[wk]={...rec,deckId:deckId,startDay:wStart,endDay:wEnd};
+        RL_STORE.set(tk,JSON.stringify(tAll));
+    }catch(e){}
+    try{
+        const ek='rl_vc_weeklyexam_exam';
+        const eAll=JSON.parse(RL_STORE.get(ek)||'{}');
+        eAll[wk]={...rec,deckId:deckId,startDay:wStart,endDay:wEnd};
+        RL_STORE.set(ek,JSON.stringify(eAll));
+    }catch(e){}
     render();
 }
 // 예문에서 target 단어를 다른 색깔로 강조 (#7)
@@ -2138,9 +2245,9 @@ function renderSchedule(s){
             const _wkId=nh.weekId;
             const _wkRec=LS.g('weekly_'+getUser().id+'_'+bookName+'_'+_wkId);
             const _wkPhase=(_wkRec&&_wkRec.trainDone)?'실전':'훈련';
-            readingHW={label:`${bookName} · 🟠 주간평가 ${_wkPhase}`,sub:`${fmtDate(nh.date)} (${nh.dayKor}요일)`,onclick:`openWeeklyTest('${_wkId}','${_wkPhase==='실전'?'exam':'train'}')`,icon:'📖',phase:_wkPhase,isWeekly:true};
+            readingHW={label:`${bookName} · 🟠 주간평가 ${_wkPhase}`,sub:`${fmtDate(nh.date)} (${nh.dayKor}요일)`,onclick:`openWeeklyTest('${_wkId}','${_wkPhase==='실전'?'exam':'train'}')`,icon:'📖',phase:_wkPhase,isWeekly:true,weeklyDoneFn:`flowAdminReadingWeekly('${_wkId}')`};
         } else {
-            readingHW={label:`${bookName} · Unit ${nh.unitNum} · ${nh.phase}`,sub:`${fmtDate(nh.date)} (${nh.dayKor}요일)`,onclick:`openUnit('${nh.uk}')`,icon:'📖',phase:nh.phase,examOnclick:`openUnit('${nh.uk}')`};
+            readingHW={label:`${bookName} · Unit ${nh.unitNum} · ${nh.phase}`,sub:`${fmtDate(nh.date)} (${nh.dayKor}요일)`,onclick:`openUnit('${nh.uk}')`,icon:'📖',phase:nh.phase,examOnclick:`openUnit('${nh.uk}')`,selfDoneFn:`flowAdminReadingSelf('${nh.uk}')`,examDoneFn:`flowAdminReadingExam('${nh.uk}')`};
         }
     }
     // 📝 문법
@@ -2150,7 +2257,7 @@ function renderSchedule(s){
         const gSess=sessions[grammarNextRowIdx];
         const gUnit=sessGrammarUnit[grammarNextRowIdx];
         if(gSess.isWeeklyTest){
-            grammarHW={label:`${s.textbooks?.grammar||'문법'} · 🟠 주간평가`,sub:`${fmtDate(gSess.date)} (${dayKor[gSess.date.getDay()]}요일)`,onclick:`window.location.href='${getGrammarUrl(parseInt(s.startGrammarPoint||'1'))}'`,icon:'📝',phase:'훈련',isWeekly:true};
+            grammarHW={label:`${s.textbooks?.grammar||'문법'} · 🟠 주간평가`,sub:`${fmtDate(gSess.date)} (${dayKor[gSess.date.getDay()]}요일)`,onclick:`window.location.href='${getGrammarUrl(parseInt(s.startGrammarPoint||'1'))}'`,icon:'📝',phase:'훈련',isWeekly:true,weeklyDoneFn:`flowAdminGrammarSelf(${gUnit})`};
         } else {
             const scD=_gRecords.selfChecks?.[gUnit];
             const lastSc=(scD?.attempts?.length>0)?scD.attempts[scD.attempts.length-1]:null;
@@ -2161,7 +2268,7 @@ function renderSchedule(s){
             // 문마중: gUnit=Unit, 라벨 "Unit", URL은 (Unit-1)*4+1
             const _gHWPt=_isNamogRow?gUnit:(gUnit-1)*4+1;
             const _gHWLabel=_isNamogRow?`Ch ${gUnit}`:`Unit ${gUnit}`;
-            grammarHW={label:`${s.textbooks?.grammar||'문법'} · ${_gHWLabel} · ${gPhase}`,sub:`${fmtDate(gSess.date)} (${dayKor[gSess.date.getDay()]}요일)`,onclick:`window.location.href='${getGrammarUrl(_gHWPt)}'`,icon:'📝',phase:gPhase,examOnclick:`window.location.href='${getGrammarUrl(_gHWPt)}&exam=${gUnit}'`};
+            grammarHW={label:`${s.textbooks?.grammar||'문법'} · ${_gHWLabel} · ${gPhase}`,sub:`${fmtDate(gSess.date)} (${dayKor[gSess.date.getDay()]}요일)`,onclick:`window.location.href='${getGrammarUrl(_gHWPt)}'`,icon:'📝',phase:gPhase,examOnclick:`window.location.href='${getGrammarUrl(_gHWPt)}&exam=${gUnit}'`,selfDoneFn:`flowAdminGrammarSelf(${gUnit})`,examDoneFn:`flowAdminGrammarExam(${gUnit})`};
         }
     }
     // 🔤 단어
@@ -2207,7 +2314,7 @@ function renderSchedule(s){
                                 let weTA2={};
                                 try{weTA2=JSON.parse(RL_STORE.get(weTrainKey2)||'{}');}catch(e){}
                                 const wPhase=weTA2[wk2]?'실전':'훈련';
-                                vocabHW={label:`${deckName2} · 🟠 주간평가 ${wPhase}`,sub:`${fmtDate(vs.date)} (${dayKor[vs.date.getDay()]}요일)`,onclick:`openVocabWeeklyExam('${_vocabDeckId}','${vDeck.days[wDS2-1]?.id||''}','${wPhase==='실전'?'exam':'train'}',${wDS2},${wDE2})`,icon:'🔤'};
+                                vocabHW={label:`${deckName2} · 🟠 주간평가 ${wPhase}`,sub:`${fmtDate(vs.date)} (${dayKor[vs.date.getDay()]}요일)`,onclick:`openVocabWeeklyExam('${_vocabDeckId}','${vDeck.days[wDS2-1]?.id||''}','${wPhase==='실전'?'exam':'train'}',${wDS2},${wDE2})`,icon:'🔤',phase:wPhase,isWeekly:true,weeklyDoneFn:`flowAdminVocabWeekly('${_vocabDeckId}',${wDS2},${wDE2})`};
                                 break;
                             }
                         }
@@ -2235,7 +2342,7 @@ function renderSchedule(s){
                     const _vsc=vScAll2[vk];
                     const _vscDone=_vsc && (_vsc.passed || (_vsc.attempts||0)>=2);
                     const vPhase=_vscDone?'실전':'훈련';
-                    vocabHW={label:`${deckName2} · DAY${vDayStart}${hpd>1?'~'+(vDayStart+hpd-1):''} · ${vPhase}`,sub:`${fmtDate(vs.date)} (${dayKor[vs.date.getDay()]}요일)`,onclick:`openVocabTrain('${_vocabDeckId}',${vDayStart},${hpd})`,icon:'🔤',phase:vPhase,examOnclick:`openVocabExam('${_vocabDeckId}',${vDayStart},${hpd})`};
+                    vocabHW={label:`${deckName2} · DAY${vDayStart}${hpd>1?'~'+(vDayStart+hpd-1):''} · ${vPhase}`,sub:`${fmtDate(vs.date)} (${dayKor[vs.date.getDay()]}요일)`,onclick:`openVocabTrain('${_vocabDeckId}',${vDayStart},${hpd})`,icon:'🔤',phase:vPhase,examOnclick:`openVocabExam('${_vocabDeckId}',${vDayStart},${hpd})`,selfDoneFn:`flowAdminVocabSelf('${_vocabDeckId}',${vDayStart},${hpd})`,examDoneFn:`flowAdminVocabExam('${_vocabDeckId}',${vDayStart},${hpd})`};
                     break;
                 }
             }
@@ -2368,13 +2475,27 @@ function renderFlowWeek(ctx){
         const bg = locked?'#F3F4F6':'#fff';
         const btnBg = locked?'#9CA3AF':(faded?'#10B981':subj.color);
         const click = (onclick&&!locked)?`onclick="${onclick}"`:'';
+        // 🧪 관리자 자동완료 버튼 (미리보기 전용) — 모드별로 셀프/실전/주간 완료 함수 호출
+        let adminBtn='';
+        if(isPreview() && hw){
+            let fn='', label='';
+            if(mode==='self-active'){ fn=hw.selfDoneFn; label='✓ 셀프 자동완료'; }
+            else if(mode==='exam-active'){ fn=hw.examDoneFn; label='✓ 실전 자동완료'; }
+            else if(anyWeekly){ fn=hw.weeklyDoneFn; label='✓ 주간평가 자동완료'; }
+            if(fn){
+                adminBtn=`<div style="margin-top:8px;text-align:right"><button onclick="event.stopPropagation();${fn}" style="font-size:11px;padding:5px 12px;background:#FEF3C7;color:#92400E;border:1px solid #F59E0B;border-radius:6px;cursor:pointer;font-weight:700">🛠 ${label} (관리자)</button></div>`;
+            }
+        }
         return `<div class="next-homework-card" style="border-left:4px solid ${subj.color};margin-bottom:8px;padding:12px 16px;cursor:${cursor};opacity:${opacity};background:${bg}" ${click}>
-            <div class="nhw-left" style="flex:1">
+            <div style="display:flex;align-items:center">
+              <div class="nhw-left" style="flex:1">
                 <div class="nhw-badge" style="font-size:11px">${subj.name}</div>
                 <div class="nhw-title" style="font-size:14px">${title}</div>
                 <div class="nhw-meta">${sub}</div>
+              </div>
+              <div class="nhw-right"><button class="nhw-cta" style="font-size:12px;padding:8px 14px;background:${btnBg};border:none;color:#fff;border-radius:8px;cursor:${cursor}">${cta}</button></div>
             </div>
-            <div class="nhw-right"><button class="nhw-cta" style="font-size:12px;padding:8px 14px;background:${btnBg};border:none;color:#fff;border-radius:8px;cursor:${cursor}">${cta}</button></div>
+            ${adminBtn}
         </div>`;
     }
 
