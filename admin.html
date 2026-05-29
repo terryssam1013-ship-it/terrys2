@@ -4700,7 +4700,10 @@ function syncProfileToFirebase(studentId, record){
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(profile)
-        }).catch(e => console.warn('Firebase 프로필 동기화 실패:', e));
+        }).then(r=>{
+            if(r.ok) console.log('[프로필 동기화] ✅ '+studentId+' Firebase 업로드 완료');
+            else console.warn('[프로필 동기화] ⚠️ '+studentId+' 응답 오류 status='+r.status);
+        }).catch(e => console.warn('[프로필 동기화] ❌ '+studentId+' 실패:', e));
     }catch(e){ console.warn('프로필 동기화 준비 실패:', e); }
 }
 
