@@ -150,6 +150,10 @@ RLStorage.init().then(async ()=>{
     if(typeof syncUsersFromFirebase === 'function'){
         try{ await syncUsersFromFirebase(); }catch(e){ console.warn('학생 동기화 건너뜀:', e); }
     }
+    // 💾 하루 1회 Firebase → GitHub 자동 백업 (오늘 이미 했으면 건너뜀)
+    if(typeof maybeBackupFirebaseDaily === 'function'){
+        maybeBackupFirebaseDaily(); // await 안 함 — 백그라운드로 진행 (화면 렌더 막지 않음)
+    }
     // 동기화 후 화면 렌더링 (최신 학생 목록 반영)
     if(typeof render === 'function' && document.getElementById('app')){
         render();
@@ -1971,6 +1975,7 @@ function isCurriculumKey(k){
     if(k.includes('gh_repo')) return false;
     if(k.includes('gh_branch')) return false;
     if(k.includes('last_deploy')) return false;
+    if(k.includes('fb_backup_date')) return false;
     // 학생 본인 진도/상태 — 제외 (각 학생 기기에서 따로 저장)
     if(/_progress$/.test(k)) return false;
     if(k.startsWith('rl_train_')) return false;
@@ -4727,6 +4732,70 @@ function deleteProfileFromFirebase(studentId){
     fetch(ADMIN_PWD_FB_URL + '/student_profiles/' + encodeURIComponent(studentId) + '.json', {
         method: 'DELETE'
     }).catch(e => console.warn('Firebase 프로필 삭제 실패:', e));
+}
+
+// 💾 Firebase 데이터를 GitHub에 백업 (firebase_backup.json) — 하루 1회 자동.
+//    Firebase는 과거 버전을 자동 보관하지 않으므로, 실수로 지워도 복구할 수 있게 GitHub에 사본 보관.
+async function backupFirebaseToGitHub(){
+    try{
+        const gh = getGitHubConfig();
+        if(!gh.token || !gh.owner || !gh.repo){ console.log('[FB백업] GitHub 설정 없음 — 건너뜀'); return false; }
+
+        // 1) Firebase 전체 데이터 받기
+        const res = await fetch(ADMIN_PWD_FB_URL + '/.json?_t=' + Date.now(), {cache:'no-store'});
+        if(!res.ok){ console.warn('[FB백업] Firebase 응답 오류', res.status); return false; }
+        const fbData = await res.json();
+        if(!fbData){ console.log('[FB백업] Firebase 비어있음 — 건너뜀'); return false; }
+
+        const now = new Date();
+        const payload = {
+            _meta: { backedUpAt: now.toISOString(), generated: now.toLocaleString('ko-KR'), source: 'Firebase RTDB 자동 백업' },
+            data: fbData
+        };
+        const json = JSON.stringify(payload, null, 2);
+        const contentB64 = utf8ToBase64(json);
+
+        // 2) GitHub에 firebase_backup.json 업로드 (기존 SHA 확인 후 PUT)
+        let currentSha = null;
+        try{
+            const chk = await fetch(
+                `https://api.github.com/repos/${gh.owner}/${gh.repo}/contents/firebase_backup.json?ref=${gh.branch}&t=${Date.now()}`,
+                {headers:{'Authorization':`Bearer ${gh.token}`,'Accept':'application/vnd.github+json'}}
+            );
+            if(chk.ok){ const d = await chk.json(); currentSha = d.sha; }
+        }catch(e){}
+
+        const body = {
+            message: `Firebase 백업 (${now.toLocaleString('ko-KR')})`,
+            content: contentB64,
+            branch: gh.branch
+        };
+        if(currentSha) body.sha = currentSha;
+
+        const put = await fetch(
+            `https://api.github.com/repos/${gh.owner}/${gh.repo}/contents/firebase_backup.json`,
+            {method:'PUT', headers:{'Authorization':`Bearer ${gh.token}`,'Accept':'application/vnd.github+json','Content-Type':'application/json'}, body: JSON.stringify(body)}
+        );
+        if(put.ok){
+            LS.s('fb_backup_date', now.toISOString().slice(0,10)); // 오늘 백업함 기록 (YYYY-MM-DD)
+            console.log('[FB백업] ✅ Firebase → GitHub 백업 완료');
+            return true;
+        }else{
+            const err = await put.json().catch(()=>({}));
+            console.warn('[FB백업] GitHub 업로드 실패:', err.message || put.status);
+            return false;
+        }
+    }catch(e){ console.warn('[FB백업] 실패:', e); return false; }
+}
+
+// admin 열 때 하루 1회만 자동 백업 (오늘 이미 했으면 건너뜀)
+async function maybeBackupFirebaseDaily(){
+    try{
+        const today = new Date().toISOString().slice(0,10); // YYYY-MM-DD
+        const last = LS.g('fb_backup_date');
+        if(last === today){ console.log('[FB백업] 오늘 이미 백업함 — 건너뜀'); return; }
+        await backupFirebaseToGitHub();
+    }catch(e){ console.warn('[FB백업] 일일 백업 확인 실패:', e); }
 }
 
 // 🔑 Firebase를 단일 기준으로 — 학생 목록을 Firebase에서 받아와 로컬 rl_users를 통째로 교체.
