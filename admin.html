@@ -143,9 +143,14 @@ h3{font-size:16px;font-weight:700;margin-bottom:12px}
 // ========== Phase 2: IndexedDB 통합 ==========
 // localStorage 5MB 한계 해소 — 데이터 저장은 IndexedDB로 (사실상 무제한)
 // 옛 localStorage 데이터는 스냅샷으로 보존 (Phase 3에서 정리 예정)
-RLStorage.init().then(()=>{
+RLStorage.init().then(async ()=>{
     console.log('✅ IndexedDB 준비 완료');
-    // IDB가 준비됐으니 화면 다시 렌더링 (배지/콘텐츠가 최신 상태 반영)
+    // 🔑 Firebase를 단일 기준으로 — 학생 목록을 Firebase에서 받아와 로컬을 맞춤.
+    //    (admin이 localStorage만 보던 탓에 생기던 "지운 학생 부활/기기마다 다름" 충돌 방지)
+    if(typeof syncUsersFromFirebase === 'function'){
+        try{ await syncUsersFromFirebase(); }catch(e){ console.warn('학생 동기화 건너뜀:', e); }
+    }
+    // 동기화 후 화면 렌더링 (최신 학생 목록 반영)
     if(typeof render === 'function' && document.getElementById('app')){
         render();
     }
@@ -4656,7 +4661,17 @@ function saveStudent(editId){
     }
     closeModal();render();
 }
-function deleteStudent(id){if(!confirm(id+' 학생을 삭제하시겠습니까?'))return;const u=LS.g('users')||{};delete u[id];LS.s('users',u);deletePasswordFromFirebase(id);deleteProfileFromFirebase(id);render();}
+function deleteStudent(id){
+    if(!confirm(id+' 학생을 삭제하시겠습니까?'))return;
+    const u=LS.g('users')||{};delete u[id];LS.s('users',u);
+    // Firebase 전 경로에서 완전 삭제 (프로필·비번·학습상태·리셋신호) → 다른 기기/로그인으로 부활 방지
+    deletePasswordFromFirebase(id);
+    deleteProfileFromFirebase(id);
+    const FB='https://terrys-d643a-default-rtdb.firebaseio.com';
+    fetch(FB+'/student_state/'+encodeURIComponent(id)+'.json',{method:'DELETE'}).catch(e=>{});
+    fetch(FB+'/student_reset_signals/'+encodeURIComponent(id)+'.json',{method:'DELETE'}).catch(e=>{});
+    render();
+}
 
 // ========== 🔐 비밀번호 관리 ==========
 const ADMIN_PWD_FB_URL = 'https://terrys-d643a-default-rtdb.firebaseio.com';
@@ -4712,6 +4727,42 @@ function deleteProfileFromFirebase(studentId){
     fetch(ADMIN_PWD_FB_URL + '/student_profiles/' + encodeURIComponent(studentId) + '.json', {
         method: 'DELETE'
     }).catch(e => console.warn('Firebase 프로필 삭제 실패:', e));
+}
+
+// 🔑 Firebase를 단일 기준으로 — 학생 목록을 Firebase에서 받아와 로컬 rl_users를 통째로 교체.
+//    admin이 열릴 때 호출 → 어느 기기에서 보든 항상 Firebase와 동일한 학생 목록.
+//    옛 localStorage 데이터(지운 줄 알았는데 남은 것 등)는 Firebase 내용으로 덮어써져 사라짐.
+async function syncUsersFromFirebase(){
+    try{
+        // 1) 프로필(이름·교재·레벨 등) + 비번을 Firebase에서 동시에 받음
+        const [pRes, pwRes] = await Promise.all([
+            fetch(ADMIN_PWD_FB_URL + '/student_profiles.json?_t=' + Date.now(), {cache:'no-store'}),
+            fetch(ADMIN_PWD_FB_URL + '/student_passwords.json?_t=' + Date.now(), {cache:'no-store'})
+        ]);
+        if(!pRes.ok){ console.warn('[학생동기화] 프로필 응답 오류', pRes.status); return false; }
+        const profiles = (await pRes.json()) || {};
+        const passwords = pwRes.ok ? ((await pwRes.json()) || {}) : {};
+
+        // 2) 기존 로컬 users 중 admin 계정은 보존 (Firebase엔 학생만 있음)
+        let localUsers = {};
+        try{ localUsers = JSON.parse(RL_STORE.get('rl_users')||'{}'); }catch(e){}
+        const merged = {};
+        // admin 등 비학생 계정 유지
+        Object.keys(localUsers).forEach(id=>{
+            if(localUsers[id] && localUsers[id].role === 'admin') merged[id] = localUsers[id];
+        });
+        // Firebase 프로필을 기준으로 학생 채움
+        Object.keys(profiles).forEach(id=>{
+            const prof = profiles[id] || {};
+            const pw = (passwords[id] && passwords[id].password) || prof.password || '1234';
+            merged[id] = Object.assign({}, prof, {password: pw, role: prof.role || 'student'});
+        });
+
+        // 3) 로컬 rl_users를 Firebase 기준으로 교체
+        RL_STORE.set('rl_users', JSON.stringify(merged));
+        console.log('[학생동기화] ✅ Firebase 기준으로 학생 ' + Object.keys(profiles).length + '명 동기화');
+        return true;
+    }catch(e){ console.warn('[학생동기화] 실패:', e); return false; }
 }
 
 // 🔐 전체 학생 비번 일괄 재설정
