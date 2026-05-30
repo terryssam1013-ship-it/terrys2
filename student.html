@@ -2467,17 +2467,55 @@ function renderFlowWeek(ctx){
     // - phase 훈련/재시험      → 셀프체크 진행중 ('self')
     // - phase 실전            → 셀프 완료, 실전 대기 ('exam')
     // - isWeekly             → 주간평가 단계 ('weekly')
+    // 과목별 실전평가 점수 조회 (done 카드에 표시용). 없으면 null.
+    function _getExamScore(key){
+        try{
+            if(key==='vocab'){
+                // rl_vc_realexam (학생키) → {deckId/startDay_homework:{bestScore}}
+                const raw=RL_STORE.get(_vcKey('rl_vc_realexam'));
+                if(!raw) return null;
+                const all=JSON.parse(raw);
+                // 가장 최근(최고) 점수 — 값들 중 bestScore 최대
+                let best=null;
+                Object.values(all).forEach(v=>{ if(v&&typeof v.bestScore==='number') best=Math.max(best===null?-1:best, v.bestScore); });
+                return best;
+            }
+            if(key==='grammar'){
+                const gr=getGrammarRecords();
+                const exKeys=Object.keys(gr.exams||{});
+                if(exKeys.length===0) return null;
+                let best=null;
+                exKeys.forEach(ch=>{
+                    const at=gr.exams[ch]&&gr.exams[ch].attempts;
+                    if(Array.isArray(at)) at.forEach(a=>{ const p=a.pct??a.score; if(typeof p==='number') best=Math.max(best===null?-1:best,p); });
+                });
+                return best;
+            }
+            if(key==='reading'){
+                // 리딩 실전: rl_assess_ 계열. HW에 점수가 실려오면 우선 사용.
+                return null; // 리딩은 별도 표기 생략 (없으면 '완료했어요'로 표시)
+            }
+        }catch(e){}
+        return null;
+    }
     function classify(hw){
         if(!hw) return 'done';
         if(hw.isWeekly) return 'weekly';
         if(hw.phase==='실전') return 'exam';
         return 'self'; // 훈련/재시험
     }
+    // 학생이 실제로 세팅한 과목만 흐름 대상에 포함 (리딩/문법/단어 중 일부만 세팅 가능)
+    //   예: 리딩+문법만 세팅 → 그 2개만 완료하면 [다음날 숙제 가기] 등장
+    let _sd=null; try{_sd=getStudentData();}catch(e){}
+    const _tb=(_sd&&_sd.textbooks)||{};
+    const _hasReading = !!_tb.reading;
+    const _hasGrammar = !!_tb.grammar;
+    const _hasVocab   = !!_tb.vocab;
     const subjects=[
-        {key:'reading', name:'📖 리딩', hw:readingHW, color:colors.reading, st:classify(readingHW)},
-        {key:'grammar', name:'📝 문법', hw:grammarHW, color:colors.grammar, st:classify(grammarHW)},
-        {key:'vocab',   name:'📚 단어', hw:vocabHW,   color:colors.vocab,   st:classify(vocabHW)},
-    ];
+        _hasReading ? {key:'reading', name:'📖 리딩', hw:readingHW, color:colors.reading, st:classify(readingHW)} : null,
+        _hasGrammar ? {key:'grammar', name:'📝 문법', hw:grammarHW, color:colors.grammar, st:classify(grammarHW)} : null,
+        _hasVocab   ? {key:'vocab',   name:'📚 단어', hw:vocabHW,   color:colors.vocab,   st:classify(vocabHW)} : null,
+    ].filter(Boolean);
 
     // 주간평가 단계인지 (어느 과목이든 weekly면 이번 주 학습은 다 끝나고 주간평가 차례)
     const anyWeekly=subjects.some(x=>x.st==='weekly');
@@ -2494,6 +2532,11 @@ function renderFlowWeek(ctx){
             // 셀프 끝난 과목 (실전은 아직 안 봄): 과목명 + 숙제 완료
             title = `${subj.name.replace(/^[^ ]+ /,'')} 숙제 완료`;
             sub = '실전평가는 학원에서 진행해요';
+        } else if(mode==='done'){
+            // 실전평가까지 완료: 점수 표시
+            title = `${subj.name.replace(/^[^ ]+ /,'')} 실전 완료`;
+            const _sc = _getExamScore(subj.key);
+            sub = (_sc!==null) ? `실전평가 ${_sc}점 · 완료` : '실전평가까지 완료했어요';
         } else {
             title = hw ? hw.label : `${subj.name} 완료`;
             sub = hw ? hw.sub : '실전평가까지 완료했어요';

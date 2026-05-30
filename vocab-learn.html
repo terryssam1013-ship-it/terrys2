@@ -2613,21 +2613,19 @@ function answerRealExam(choiceIdx){
     re.answers.push({questionIdx:re.idx,choiceIdx,correct:isCorrect,question:q});
     saveRealExamProgress(); // 진행 저장 (도중에 나가도 이어 풀기)
     
+    // 실전 시험 방식: 정답/오답 즉시 표시 안 함. 내가 고른 것만 표시 후 바로 다음 문제로.
+    //   (정답 여부·오답 풀이는 마지막 결과 화면에서 확인)
     const buttons=document.querySelectorAll('.dc-choice');
     buttons.forEach((btn,i)=>{
         btn.disabled=true;
-        if(i===q.correctIndex)btn.classList.add('dc-choice-correct');
-        if(i===choiceIdx&&!isCorrect)btn.classList.add('dc-choice-wrong');
+        if(i===choiceIdx)btn.classList.add('dc-choice-selected');
     });
-    
-    if(isCorrect){playCorrectSound&&playCorrectSound();}
-    else{playWrongSound&&playWrongSound();}
     
     setTimeout(()=>{
         re.idx++;
         if(re.idx>=re.questions.length)renderRealExamResult();
         else renderRealExam();
-    },isCorrect?700:1200);
+    },200);
 }
 
 function renderRealExamResult(){
@@ -2919,20 +2917,32 @@ function answerWeeklyExam(choiceIdx){
     saveWeeklyExamProgress();
     
     const buttons=document.querySelectorAll('.dc-choice');
-    buttons.forEach((btn,i)=>{
-        btn.disabled=true;
-        if(i===q.correctIndex)btn.classList.add('dc-choice-correct');
-        if(i===choiceIdx&&!isCorrect)btn.classList.add('dc-choice-wrong');
-    });
-    
-    if(isCorrect){playCorrectSound&&playCorrectSound();}
-    else{playWrongSound&&playWrongSound();}
-    
-    setTimeout(()=>{
-        we.idx++;
-        if(we.idx>=we.questions.length)renderWeeklyExamResult();
-        else renderWeeklyExam();
-    },isCorrect?700:1200);
+    // 주간평가 실전(exam)은 시험 방식: 즉시 채점 안 함. 훈련(train)은 연습이라 즉시 피드백 유지.
+    const _isExamMode = (we.mode==='exam' || weeklyMode==='exam');
+    if(_isExamMode){
+        buttons.forEach((btn,i)=>{
+            btn.disabled=true;
+            if(i===choiceIdx)btn.classList.add('dc-choice-selected');
+        });
+        setTimeout(()=>{
+            we.idx++;
+            if(we.idx>=we.questions.length)renderWeeklyExamResult();
+            else renderWeeklyExam();
+        },200);
+    }else{
+        buttons.forEach((btn,i)=>{
+            btn.disabled=true;
+            if(i===q.correctIndex)btn.classList.add('dc-choice-correct');
+            if(i===choiceIdx&&!isCorrect)btn.classList.add('dc-choice-wrong');
+        });
+        if(isCorrect){playCorrectSound&&playCorrectSound();}
+        else{playWrongSound&&playWrongSound();}
+        setTimeout(()=>{
+            we.idx++;
+            if(we.idx>=we.questions.length)renderWeeklyExamResult();
+            else renderWeeklyExam();
+        },isCorrect?700:1200);
+    }
 }
 
 function renderWeeklyExamResult(){
