@@ -4963,7 +4963,15 @@ function showResetStudentModal(studentId){
     ];
     vocabMapping.forEach(vm=>{
         try{
-            const v=JSON.parse(RL_STORE.get(vm.key));
+            // 단어 학습기록은 학생별 키(rl_vc_xxx_<sid>)로 저장됨. 학생별 우선, 없으면 옛 공용키 fallback.
+            const _sidKey = vm.key + '_' + studentId;
+            let _useKey = _sidKey;
+            let raw = RL_STORE.get(_sidKey);
+            if(raw===null||raw===undefined){
+                raw = RL_STORE.get(vm.key); // 옛 공용키 (구버전 잔여 데이터 호환)
+                _useKey = vm.key;
+            }
+            const v=JSON.parse(raw);
             if(!v||typeof v!=='object')return;
             Object.keys(v).forEach(itemKey=>{
                 const item=v[itemKey];
@@ -4972,7 +4980,7 @@ function showResetStudentModal(studentId){
                     const displayKey=(vm.group==='weekly'?'W:':'')+itemKey;
                     if(!data.vocab[displayKey])data.vocab[displayKey]={};
                     if(!data.vocab[displayKey][vm.type])data.vocab[displayKey][vm.type]=[];
-                    data.vocab[displayKey][vm.type].push({vocabKey:vm.key,itemKey:itemKey});
+                    data.vocab[displayKey][vm.type].push({vocabKey:_useKey,itemKey:itemKey});
                 }
             });
         }catch(e){}
