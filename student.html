@@ -1893,11 +1893,29 @@ function renderSchedule(s){
         // 🔧 flow가 실전(exam) 단계면, 실전 본 Chapter에서 다음으로 전진하지 않고 머문다.
         //   (NEXT[flowGoNextDay]를 눌러 phase가 selfcheck로 바뀌어야 다음 학습일로 전진)
         //   리딩의 _holdOnExam 처리와 동일 목적 — 실전 끝내도 NEXT 전엔 '실전 완료'로 그 자리에 머묾.
+        //   ⚠️ 단, '셀프완료+실전미완'인 더 뒤 Chapter가 있으면 거기가 진짜 이번 실전 숙제 → 거기로 간다.
+        //     (4단계[수]: 월 Ch1 실전완료 + 수 Ch2 셀프완료 → Ch2. 여기서 Ch1에 머물면 실전 구간이 빠진다.
+        //      2단계[월]: 다음 Ch2는 셀프 안 함 → 그런 Chapter 없음 → Ch1에 정상적으로 머묾.)
+        //   리딩에서 검증된 로직과 동일 원리.
+        let _gLaterPending=-1;
         if(_holdOnExam && examUnits.length>0){
             const _maxExamU=Math.max(...examUnits);
-            // 실전 본 Chapter가 현재(또는 그 이상)면 그 Chapter에 고정
+            // _maxExamU보다 뒤 Chapter 중 '셀프완료 + 실전미완'인 가장 빠른 Chapter 찾기
+            for(let u=_maxExamU+1; u<=_maxExamU+1; u++){
+                const scD=_gRecords.selfChecks?.[u];
+                const exD=_gRecords.exams?.[u];
+                const hasSc=scD?.attempts?.length>0;
+                const hasExDone=!!(exD && _gExamCompleted(exD));
+                if(hasSc && !hasExDone){ _gLaterPending=u; break; }
+            }
+        }
+        if(_holdOnExam && _gLaterPending>=0){
+            // 뒤에 셀프완료+실전미완 Chapter 있음 → 그 Chapter가 이번 실전 숙제
+            curUnit=_gLaterPending;
+        }else if(_holdOnExam && examUnits.length>0){
+            const _maxExamU=Math.max(...examUnits);
+            // 실전 본 Chapter가 현재(또는 그 이상)면 그 Chapter에 고정 (머물기)
             if(_maxExamU>=curUnit) curUnit=_maxExamU;
-            // hold 중에는 아래 maxExamUnit+1 전진 로직을 건너뛴다
         }else if(examUnits.length>0){
             const maxExamUnit=Math.max(...examUnits);
             if(maxExamUnit+1>curUnit)curUnit=maxExamUnit+1;
@@ -2439,7 +2457,29 @@ function renderSchedule(s){
                 const _vScRec = vScAll2[vk];       // 셀프(훈련) 기록
                 // 🔑 리딩·문법과 동일: 실전을 끝냈어도 flow가 'exam' 단계면 NEXT 전까지
                 //    이 세션에 머물러 '실전 완료'로 표시 (단어만 실전 끝내자마자 다음날로 튀던 버그 방지)
-                const _vHold = _holdOnExam && _vReDone && _vScRec;
+                //   ⚠️ 단, 뒤에 '실전 미완료' DAY가 있으면 머물지 않는다(거기가 진짜 이번 실전 숙제).
+                //     (4단계[수]: 월 DAY1 실전완료 + 수 DAY2 → DAY2. 2단계[월]: 뒤 DAY 미완 없음 → DAY1 머묾.)
+                let _vLaterPending=false;
+                if(_holdOnExam && _vReDone && _vScRec){
+                    for(let k=i+1;k<sessions.length;k++){
+                        const ks=sessions[k];
+                        if(ks.isWeeklyTest)continue;
+                        if(vocabStartDate2&&ks.date<vocabStartDate2)continue;
+                        let kIdx=0;
+                        for(let j=0;j<allSessions.length;j++){
+                            const aj=allSessions[j];
+                            if(aj.isWeeklyTest)continue;
+                            if(vocabStartDate2&&aj.date<vocabStartDate2)continue;
+                            if(aj.date.getTime()===ks.date.getTime())break;
+                            kIdx++;
+                        }
+                        const kDayStart=Math.max(1,parseInt(_sdVocab.startVocabDay)||1)+kIdx*hpd;
+                        if(kDayStart>vDeck.days.length)continue;
+                        const kvk=_vocabDeckId+'/'+kDayStart+'_'+hpd;
+                        if(!vReAll2[kvk]){ _vLaterPending=true; break; }  // 뒤에 실전 미완료 DAY 있음
+                    }
+                }
+                const _vHold = _holdOnExam && _vReDone && _vScRec && !_vLaterPending;
                 if(!_vReDone || _vHold){
                     const _vsc=_vScRec;
                     const _vscDone=_vsc && (_vsc.passed || (_vsc.attempts||0)>=2);
