@@ -3334,7 +3334,7 @@ function _showRealExamGate(){
                         <div style="font-size:13px;color:#047857;margin-top:8px;line-height:1.7">셀프체크까지 끝냈어요. 여기까지가 오늘 단어 숙제예요.<br>리딩·문법도 끝낸 뒤 학습일정에서 <b>[NEXT]</b>를 누르면<br>실전평가가 열립니다 (학원에서 진행).</div>
                     </div>
                     <div class="summary-cta" style="margin-top:8px;flex-direction:column;gap:8px">
-                        <button class="nav-btn nav-btn-primary" onclick="goBack()" style="width:100%;padding:14px;font-size:15px">📅 학습일정으로</button>
+                        <button class="nav-btn nav-btn-primary" onclick="(function(){var p=new URLSearchParams(location.search);var pv=p.get('preview')==='1';var sid=p.get('student');location.href=(pv&&sid&&sid!=='pv')?'student.html?preview='+encodeURIComponent(sid):'student.html';})()" style="width:100%;padding:14px;font-size:15px">📅 학습일정으로</button>
                     </div>
                 </div>`;
                 window.scrollTo({top:0,behavior:'instant'});
