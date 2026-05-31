@@ -2364,7 +2364,15 @@ function renderSchedule(s){
         const gSess=sessions[grammarNextRowIdx];
         const gUnit=sessGrammarUnit[grammarNextRowIdx];
         if(gSess.isWeeklyTest){
-            grammarHW={label:`${s.textbooks?.grammar||'문법'} · 🟠 주간평가 훈련`,sub:`${fmtDate(gSess.date)} (${dayKor[gSess.date.getDay()]}요일)`,onclick:`window.location.href='${getGrammarUrl(parseInt(s.startGrammarPoint||'1'))}'`,icon:'📝',phase:'훈련',isWeekly:true,weeklyDoneFn:`flowAdminGrammarSelf(${gUnit})`};
+            // 🟠 주간평가: grammarwise를 wsc(훈련) 모드로 진입시켜야 함.
+            //   wkInfo.fromUnit이 시작 챕터, weekIdx가 주차 번호.
+            //   스케줄 셀(sched-cell)과 동일한 URL 패턴(&wsc=week&from=&to=) 사용.
+            const _gWk = sessWeeklyInfo[grammarNextRowIdx] || {};
+            const _gWkIdx = _gWk.weekIdx || 1;
+            const _gFrom = _gWk.fromUnit || parseInt(s.startGrammarPoint||'1');
+            const _gTo = _gWk.toUnit || _gFrom;
+            const _gWeeklyUrl = `${getGrammarUrl(_gFrom)}&wsc=${_gWkIdx}&from=${_gFrom}&to=${_gTo}`;
+            grammarHW={label:`${s.textbooks?.grammar||'문법'} · 🟠 주간평가 훈련`,sub:`${fmtDate(gSess.date)} (${dayKor[gSess.date.getDay()]}요일)`,onclick:`window.location.href='${_gWeeklyUrl}'`,icon:'📝',phase:'훈련',isWeekly:true,weeklyDoneFn:`flowAdminGrammarSelf(${gUnit})`};
         } else {
             const scD=_gRecords.selfChecks?.[gUnit];
             const lastSc=(scD?.attempts?.length>0)?scD.attempts[scD.attempts.length-1]:null;
