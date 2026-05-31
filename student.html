@@ -2476,7 +2476,10 @@ function renderSchedule(s){
                         const kDayStart=Math.max(1,parseInt(_sdVocab.startVocabDay)||1)+kIdx*hpd;
                         if(kDayStart>vDeck.days.length)continue;
                         const kvk=_vocabDeckId+'/'+kDayStart+'_'+hpd;
-                        if(!vReAll2[kvk]){ _vLaterPending=true; break; }  // 뒤에 실전 미완료 DAY 있음
+                        // 뒤 DAY가 '셀프완료 + 실전미완'일 때만 진짜 이번 실전 숙제로 인정.
+                        //   ⚠️ 셀프완료(vScAll2[kvk]) 조건 필수 — 없으면 2단계(월)에서 셀프 안 한 DAY2로 잘못 튄다.
+                        //      (리딩의 trainRec && exam===null 조건과 동일 원리)
+                        if(vScAll2[kvk] && !vReAll2[kvk]){ _vLaterPending=true; break; }
                     }
                 }
                 const _vHold = _holdOnExam && _vReDone && _vScRec && !_vLaterPending;
