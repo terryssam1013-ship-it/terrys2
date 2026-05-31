@@ -397,7 +397,7 @@ let state={
 // ========== vocabFlow 설정 가져오기 (admin 설정 반영) ==========
 function getVocabFlowSettings(){
     const defaults={
-        gamesRequired:0,
+        gamesRequired:1,
         dayCheck:{target:80, ratio:{meaning:30,word:30,blank:40}},
         selfCheck:{total:30, target:80, ratio:{meaning:30,word:30,blank:40}},
         realExam:{total:30, target:80, ratio:{meaning:30,word:30,blank:40}},
@@ -407,7 +407,7 @@ function getVocabFlowSettings(){
         const settings=JSON.parse(RL_STORE.get('rl_settings')||'{}');
         const vf=settings.vocabFlow||{};
         return {
-            // 게임은 선택 — 어드민 설정값 그대로 사용, 미설정 시 0개(게임 없이 데이체크 진입)
+            // 게임은 복습용 — 어드민 설정값 우선, 미설정 시 기본 1개(게임 최소 1개 후 데이체크 진입)
             gamesRequired: Math.max(0, vf.gamesRequired!==undefined?vf.gamesRequired:defaults.gamesRequired),
             dayCheck:{
                 target: vf.dayCheck?.target!==undefined?vf.dayCheck.target:defaults.dayCheck.target,
@@ -894,8 +894,24 @@ function markKnownFromModal(enEncoded){
 }
 
 function goBack(){
-    if(isPreview){window.close();}
-    else{history.length>1?history.back():window.location.href='student.html';}
+    // history.back()은 직접진입/내부이동 누적 시 스택이 꼬여 클릭이 먹통이 되는 문제가 있어
+    // 명시적 이동으로 교체. preview 모드면 vocab은 ?preview=1&student=<id> 형식이고
+    // student.html은 ?preview=<id> 형식이라 변환해서 이동한다.
+    try{
+        if(isPreview){
+            if(studentId && studentId!=='pv'){
+                window.location.href='student.html?preview='+encodeURIComponent(studentId);
+            }else{
+                // 학생 정보가 없는 순수 미리보기 창이면 닫기 시도, 실패하면 student로
+                try{ window.close(); }catch(e){}
+                window.location.href='student.html';
+            }
+        }else{
+            window.location.href='student.html';
+        }
+    }catch(e){
+        window.location.href='student.html';
+    }
 }
 
 // ========== 유틸 ==========
