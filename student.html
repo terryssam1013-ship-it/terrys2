@@ -2309,7 +2309,11 @@ function renderSchedule(s){
             // 문마중: gUnit=Unit, 라벨 "Unit", URL은 (Unit-1)*4+1
             const _gHWPt=_isNamogRow?gUnit:(gUnit-1)*4+1;
             const _gHWLabel=_isNamogRow?`Ch ${gUnit}`:`Unit ${gUnit}`;
-            grammarHW={label:`${s.textbooks?.grammar||'문법'} · ${_gHWLabel} · ${gPhase}`,sub:`${fmtDate(gSess.date)} (${dayKor[gSess.date.getDay()]}요일)`,onclick:`window.location.href='${getGrammarUrl(_gHWPt)}'`,icon:'📝',phase:gPhase,examOnclick:`window.location.href='${getGrammarUrl(_gHWPt)}&exam=${gUnit}'`,selfDoneFn:`flowAdminGrammarSelf(${gUnit})`,examDoneFn:`flowAdminGrammarExam(${gUnit})`};
+            // 진입 URL: 재시험이면 셀프체크(STEP4) 화면으로 바로(scReview), 그 외엔 처음부터(getGrammarUrl=fresh 포함)
+            const _gOpenUrl = (gPhase==='재시험')
+                ? `${getGrammarUrl(_gHWPt)}&scReview=${gUnit}`
+                : `${getGrammarUrl(_gHWPt)}`;
+            grammarHW={label:`${s.textbooks?.grammar||'문법'} · ${_gHWLabel} · ${gPhase}`,sub:`${fmtDate(gSess.date)} (${dayKor[gSess.date.getDay()]}요일)`,onclick:`window.location.href='${_gOpenUrl}'`,icon:'📝',phase:gPhase,examOnclick:`window.location.href='${getGrammarUrl(_gHWPt)}&exam=${gUnit}'`,selfDoneFn:`flowAdminGrammarSelf(${gUnit})`,examDoneFn:`flowAdminGrammarExam(${gUnit})`};
         }
     }
     // 🔤 단어
