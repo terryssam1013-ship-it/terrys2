@@ -1047,12 +1047,12 @@ function getGrammarUrl(point){
     // 나모그: 챕터별 독립 페이지 (grammarwise-l1-ch{N}.html / grammarwise-ch{N}.html)
     // point 인자는 나모그에서 'chapter 번호'로 해석됨
     if(level==='namog1'){
-        const url=`grammarwise-l1-ch${point}.html?_t=${Date.now()}${pid?'&previewSid='+encodeURIComponent(pid):''}`;
+        const url=`grammarwise-l1-ch${point}.html?_t=${Date.now()}&fresh=1${pid?'&previewSid='+encodeURIComponent(pid):''}`;
         console.log('[getGrammarUrl/namog1]',{chapter:point,previewSid:pid,url});
         return url;
     }
     if(level==='namog2'){
-        const url=`grammarwise-ch${point}.html?_t=${Date.now()}${pid?'&previewSid='+encodeURIComponent(pid):''}`;
+        const url=`grammarwise-ch${point}.html?_t=${Date.now()}&fresh=1${pid?'&previewSid='+encodeURIComponent(pid):''}`;
         console.log('[getGrammarUrl/namog2]',{chapter:point,previewSid:pid,url});
         return url;
     }
@@ -2427,9 +2427,9 @@ function renderSchedule(s){
         if(allDone){
             nextWeekArea = `<div style="text-align:center;margin-top:16px">
                 <button onclick="advanceWeek()" style="background:#10B981;color:#fff;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(16,185,129,.3)">
-                    Next Week →
+                    NEXT →
                 </button>
-                <div style="font-size:12px;color:var(--text3);margin-top:8px">이번 주 학습·주간평가 완료! 다음 주 일정으로 넘어갑니다</div>
+                <div style="font-size:12px;color:var(--text3);margin-top:8px">이번 주 학습·주간평가 완료! NEXT를 누르면 다음 주 일정으로 넘어갑니다</div>
             </div>`;
         } else {
             const adminSkipBtn = isPreview()?`
@@ -2517,6 +2517,17 @@ function renderFlowWeek(ctx){
         _hasVocab   ? {key:'vocab',   name:'📚 단어', hw:vocabHW,   color:colors.vocab,   st:classify(vocabHW)} : null,
     ].filter(Boolean);
 
+    // 🔧 phase 자동 보정: 진도는 점수 기반으로 자동 전진하는데 phase(rl_flow)는 [다음날] 눌러야 바뀜.
+    //   → 새 학습일로 넘어왔는데 phase가 이전 'exam'에 멈춰있으면, 리딩이 셀프 전인데 실전평가가 열리는 버그 발생.
+    //   보정 규칙: 셀프체크가 아직 안 끝난 과목('self')이 하나라도 있으면, 아직 셀프체크 단계이므로 phase를 selfcheck로 교정.
+    if(flow.phase==='exam'){
+        const _anySelfPending = subjects.some(x=>x.st==='self');
+        if(_anySelfPending){
+            flow.phase='selfcheck';
+            try{ setFlowState({phase:'selfcheck'}); }catch(e){}
+        }
+    }
+
     // 주간평가 단계인지 (어느 과목이든 weekly면 이번 주 학습은 다 끝나고 주간평가 차례)
     const anyWeekly=subjects.some(x=>x.st==='weekly');
     // 전체 주간평가까지 완료 → 다음 주로 (기존 검증 로직)
@@ -2596,11 +2607,11 @@ function renderFlowWeek(ctx){
         });
         if(selfAllDone){
             footer = `<div style="text-align:center;margin-top:16px">
-                <button onclick="flowCompleteHomework()" style="background:#10B981;color:#fff;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(16,185,129,.3)">숙제 완료 ✓</button>
-                <div style="font-size:12px;color:var(--text3);margin-top:8px">셀프체크를 모두 마쳤어요! 버튼을 누르면 실전평가가 열립니다 (학원에서 진행)</div>
+                <button onclick="flowCompleteHomework()" style="background:#10B981;color:#fff;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(16,185,129,.3)">NEXT →</button>
+                <div style="font-size:12px;color:var(--text3);margin-top:8px">모든 과목 셀프체크 완료! NEXT를 누르면 실전평가가 열립니다 (학원에서 진행)</div>
             </div>`;
         } else {
-            footer = `<div style="text-align:center;margin-top:14px;font-size:13px;color:var(--text3)">📝 세 과목 셀프체크를 모두 끝내면 [숙제 완료] 버튼이 열려요 (순서는 자유)</div>`;
+            footer = `<div style="text-align:center;margin-top:14px;font-size:13px;color:var(--text3)">📝 할당된 과목 셀프체크를 모두 끝내면 [NEXT] 버튼이 열려요 (순서는 자유)</div>`;
         }
         return wrapFlow(body+footer);
     }
@@ -2615,7 +2626,7 @@ function renderFlowWeek(ctx){
         });
         if(examAllDone){
             footer = `<div style="text-align:center;margin-top:16px">
-                <button onclick="flowGoNextDay()" style="background:#3B82F6;color:#fff;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(59,130,246,.3)">다음날 숙제 가기 →</button>
+                <button onclick="flowGoNextDay()" style="background:#3B82F6;color:#fff;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(59,130,246,.3)">NEXT →</button>
                 <div style="font-size:12px;color:var(--text3);margin-top:8px">실전평가를 모두 마쳤어요! 다음 학습일 숙제로 넘어갑니다</div>
             </div>`;
         } else {
@@ -4581,15 +4592,19 @@ function submitSentSelfAll(){
     const score=totalQ?Math.round(totalCorrect/totalQ*100):0;
     const sets=getSettings();
     const target=sets.sentSelfCheck?.target||80;
-    const passed=score>=target;
-    const result={score,target,passed,totalCorrect,totalQ,r1,r2,r3,r4};
-    state.sentSelfResult=result;
-    // LS 저장
+    // 🎯 도전 횟수 카운트 (이번 시도 포함)
     const uid=getUser().id;
-    // 🎯 도전 횟수 카운트
     const _prevSentSelf=LS.g('trtype_'+uid+'_'+state.unit+'_sentSelf');
     const _ssAttempts=((_prevSentSelf&&_prevSentSelf.attempts)||0)+1;
-    LS.s('trtype_'+uid+'_'+state.unit+'_sentSelf',{score,passed,totalCorrect,totalQ,target,r1,r2,r3,r4,timestamp:Date.now(),attempts:_ssAttempts});
+    // 셀프체크 통과 규칙: 1회 80점↑ 즉시 통과 / 80점 미만이면 재시험 1회 → 그 결과는 점수 무관 강제 통과.
+    //   즉 (점수 80↑) 또는 (2회차 이상) 이면 통과(=숙제 완료).
+    const scorePassed = score>=target;
+    const passed = scorePassed || _ssAttempts>=2;
+    const forcedPass = !scorePassed && _ssAttempts>=2; // 점수 미달이지만 재시험 완료로 강제 통과
+    const result={score,target,passed,scorePassed,forcedPass,attempts:_ssAttempts,totalCorrect,totalQ,r1,r2,r3,r4};
+    state.sentSelfResult=result;
+    // LS 저장
+    LS.s('trtype_'+uid+'_'+state.unit+'_sentSelf',{score,passed,scorePassed,forcedPass,totalCorrect,totalQ,target,r1,r2,r3,r4,timestamp:Date.now(),attempts:_ssAttempts});
     // 학습 기록(progress)에도 저장
     {
         const pr=LS.g('progress')||{};if(!pr[uid])pr[uid]=[];
@@ -6779,10 +6794,15 @@ function viewSentSelfResult(){
         </div>`;
     };
     return `<div style="max-width:760px;margin:30px auto">
+        ${r.passed?`<div style="background:var(--green-light);border:1.5px solid #6EE7B7;border-radius:14px;padding:18px;text-align:center;margin-bottom:14px">
+            <div style="font-size:30px;margin-bottom:4px">📖✅</div>
+            <div style="font-size:19px;font-weight:800;color:#065F46">리딩 숙제 완료!</div>
+            <div style="font-size:13px;color:#047857;margin-top:8px;line-height:1.7">셀프체크까지 끝냈어요. 여기까지가 오늘 리딩 숙제예요.<br>문법·단어도 끝낸 뒤 학습일정에서 <b>[NEXT]</b>를 누르면<br>실전평가가 열립니다 (학원에서 진행).</div>
+        </div>`:''}
         <div class="card" style="text-align:center;padding:36px 24px">
             <div class="score-circle" style="background:${r.passed?'var(--green-light)':'var(--red-light)'};color:${r.passed?'var(--green-dark)':'var(--red)'}">${r.score}<span class="lbl">점</span></div>
-            <h2>${r.passed?'🎉 통과!':'😢 다시 도전'}</h2>
-            <p class="page-desc" style="margin-top:4px">문장 셀프체크 (4가지 유형 통합)<br>${r.totalCorrect}/${r.totalQ} 정답 · 목표 ${r.target}점 ${r.passed?'✓ 통과':'✗ 미달'}</p>
+            <h2>${r.scorePassed?'🎉 통과!':(r.forcedPass?'✅ 셀프체크 완료':'😢 다시 도전')}</h2>
+            <p class="page-desc" style="margin-top:4px">문장 셀프체크 (4가지 유형 통합)<br>${r.totalCorrect}/${r.totalQ} 정답 · 목표 ${r.target}점 ${r.scorePassed?'✓ 통과':(r.forcedPass?'· 재시험 완료(강제 통과)':'✗ 미달')}</p>
             <div class="grid grid-4 mb-16" style="margin-top:20px;gap:10px">
                 ${phaseScore(1,r.r1)}
                 ${phaseScore(2,r.r2)}
@@ -6791,10 +6811,10 @@ function viewSentSelfResult(){
             </div>
             <p style="font-size:11.5px;color:var(--text3);margin-bottom:14px">💡 각 Phase 카드를 클릭하면 오답과 해설을 확인할 수 있습니다.</p>
             <div class="flex flex-gap" style="justify-content:center;flex-wrap:wrap">
-                ${!r.passed?`<button class="btn-primary" onclick="sentSelfRetry()">↻ 다시 시험 보기</button>`:''}
-                <button class="${r.passed?'btn-primary':'btn-ghost'}" onclick="sentSelfBackHub()">${r.passed?'✓ 훈련모드로':'← 훈련모드로 (재시도 가능)'}</button>
+                ${!r.passed?`<button class="btn-primary" onclick="sentSelfRetry()">↻ 재시험 보기 (마지막 1회)</button>`:''}
+                <button class="${r.passed?'btn-primary':'btn-ghost'}" onclick="sentSelfBackHub()">${r.passed?'✓ 훈련모드로':'← 훈련모드로'}</button>
             </div>
-            ${!r.passed?`<p style="font-size:12px;color:var(--red);margin-top:14px">⚠️ 목표 ${r.target}점에 미달했습니다.</p>`:''}
+            ${(!r.passed)?`<p style="font-size:12px;color:var(--red);margin-top:14px">⚠️ 목표 ${r.target}점 미달 — 재시험 1회 후 점수와 무관하게 완료 처리됩니다.</p>`:''}
         </div>
     </div>`;
 }

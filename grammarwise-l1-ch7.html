@@ -2611,7 +2611,7 @@ function renderPractice(stageN){
     }
   };
   document.getElementById('nextBtn').onclick = ()=>{
-    if(i===data.length-1){state.cur=stageN+1;if(state.cur===4)state.s4.idx=0;save();render();}
+    if(i===data.length-1){state.cur=stageN+1;if(state.cur===4){state.s4.idx=0;state.s4.ans=[];state.s4.done=false;state.s4.reviewMode=false;}save();render();}
     else{s.idx=i+1;save();render();}
   };
 
@@ -2947,7 +2947,7 @@ function renderResults(stageN){
           return `<div style="text-align:center;padding:18px 16px;background:#D1FAE5;border:2px solid #10B981;border-radius:16px;margin-bottom:12px">
               <div style="font-size:34px;margin-bottom:6px">📝✅</div>
               <div style="font-size:18px;font-weight:800;color:#065F46">문법 숙제 완료!</div>
-              <div style="font-size:13px;color:#047857;margin-top:6px;line-height:1.6">셀프체크까지 끝냈어요. 여기까지가 오늘 문법 숙제예요.<br>리딩·단어도 끝낸 뒤 학습일정에서 <b>[숙제 완료]</b>를 누르면<br>실전평가가 열립니다 (학원에서 진행).</div>
+              <div style="font-size:13px;color:#047857;margin-top:6px;line-height:1.6">셀프체크까지 끝냈어요. 여기까지가 오늘 문법 숙제예요.<br>리딩·단어도 끝낸 뒤 학습일정에서 <b>[NEXT]</b>를 누르면<br>실전평가가 열립니다 (학원에서 진행).</div>
             </div>` + _schedBtn4;
         }
         return _schedBtn4 + `<div style="font-size:13px;color:#E04B5A;text-align:center;font-weight:700;padding:10px 16px;background:#FFE4E7;border-radius:12px;margin-top:8px">⚠️ 80점 미만 — 재시험 1회 가능</div>`;
@@ -3016,7 +3016,7 @@ function renderResults(stageN){
     save();render();
   };
   const ns = document.getElementById('nextStage');
-  if(ns)ns.onclick = ()=>{state.cur=5;state.s5.idx=0;save();render()};
+  if(ns)ns.onclick = ()=>{state.cur=5;state.s5={idx:0,ans:[],done:false};save();render()};
   const gh = document.getElementById('goHome');
   if(gh)gh.onclick = ()=>{state.cur=1;save();render()};
 }
@@ -3046,6 +3046,17 @@ function render(){
     if(s === 5 && _flowLockExam) t.classList.add('locked');  // 새 흐름: 숙제완료 전 실전 잠금
     t.onclick = ()=>{
       if(t.classList.contains('locked')) return; // 잠긴 단계 클릭 차단
+      // STEP4(셀프체크)·STEP5(실전) 탭으로 진입 시, 이미 완료된 상태면
+      //   결과 화면 대신 1번 문제부터 새로 시작 (점수는 기존 attempts에 별도 기록되므로 안전)
+      if((s===4||s===5) && state.cur!==s){
+        const st=state['s'+s];
+        if(st && st.done){
+          st.idx=0;
+          st.ans=[];
+          st.done=false;
+          st.reviewMode=false;
+        }
+      }
       state.cur=s;save();render()
     };
   });
@@ -3137,6 +3148,16 @@ function _restoreAnswersFromStudentRecord(stageN){
   }catch(e){ console.warn('[entry] syncDown 실패:', e); }
   try{
     const params = new URLSearchParams(location.search);
+    // 🆕 fresh=1 (학습일정 '시작' 버튼으로 진입) → 무조건 STEP1(강의청취)부터 새로 시작.
+    //   이전에 저장된 진행(state.cur=4/5 등)을 무시하고 처음부터. 단 weekly/exam/review 특수진입은 예외.
+    const _isFresh = params.get('fresh')==='1';
+    const _hasSpecialEntry = params.get('wsc')||params.get('wscReview')||params.get('wex')||params.get('wexReview')||params.get('exam')||params.get('scReview')||params.get('examReview');
+    if(_isFresh && !_hasSpecialEntry){
+        state.cur = 1;
+        if(state.s4) state.s4 = {idx:0, ans:[], done:false};
+        if(state.s5) state.s5 = {idx:0, ans:[], done:false};
+        save();
+    }
     // 주간평가 진입 (wsc=N: 훈련, wex=N: 실전)
     const wscIdx = params.get('wsc') || params.get('wscReview');
     const wexIdx = params.get('wex') || params.get('wexReview');
@@ -3167,6 +3188,8 @@ function _restoreAnswersFromStudentRecord(stageN){
       }
     } else if(params.get('exam')){
       state.cur = 5;
+      // 실전평가 새로 진입 → 1번 문제부터 (이전 결과 화면이 뜨지 않도록 초기화)
+      state.s5 = {idx:0, ans:[], done:false};
       save();
     } else if(params.get('scReview')){
       state.cur = 4;
