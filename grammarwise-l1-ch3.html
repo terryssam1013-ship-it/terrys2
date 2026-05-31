@@ -2115,7 +2115,9 @@ function syncNamogWeeklyToStudent(){
     const pct = total>0 ? Math.round((correct/total)*100) : 0;
     const passed = pct>=80;
     const prefix = (isPreview?'rl_pv_gr_':'rl_gr_') + sid + '_';
-    const innerKey = getWeeklyKey(WEEKLY_INDEX, WEEKLY_MODE);
+    // student.html이 읽는 키 형식: NAMOG{level}_{wsc|wex}_{week}
+    //   (wsc_ → weeklySC, wex_ → weeklyExam 로 파싱됨)
+    const innerKey = 'NAMOG' + NAMOG_LEVEL + '_' + WEEKLY_MODE + '_' + WEEKLY_INDEX;
     const key = prefix + innerKey;
     let dataObj;
     try{ dataObj = JSON.parse(localStorage.getItem(key)||'null'); }catch(e){}
@@ -2895,9 +2897,9 @@ function renderResults(stageN){
   });
 
   const nextBtnHTML = (function(){
-    // STEP 5(실전평가) 결과 화면: 항상 "처음으로" 표시
+    // STEP 5(실전평가/주간평가) 결과 화면
     if(stageN !== 4){
-      // STEP 5 실전평가 결과 — 로그인 학생이면 학습일정으로, 비로그인이면 처음으로
+      // STEP 5 결과 — 로그인 학생이면 학습일정으로, 비로그인이면 처음으로
       let _sid = new URLSearchParams(location.search).get('previewSid');
       const _isPv = !!_sid;
       if(!_sid){
@@ -2908,6 +2910,19 @@ function renderResults(stageN){
       }
       if(_sid){
         const _url = _isPv ? 'student.html?preview='+encodeURIComponent(_sid) : 'student.html';
+        // 🔒 주간평가 훈련(wsc) 게이트: 1회차 80점 미만이면 다시 풀기 강제 (재시험 1회).
+        //    실전(wex)·2회차 이상·80점 이상은 기존대로 통과.
+        if(WEEKLY_MODE === 'wsc'){
+          let _attempts = 0;
+          try{
+            const _k = (_isPv?'rl_pv_gr_':'rl_gr_') + _sid + '_NAMOG' + NAMOG_LEVEL + '_wsc_' + WEEKLY_INDEX;
+            const _d = JSON.parse(localStorage.getItem(_k)||'null');
+            if(_d && Array.isArray(_d.attempts)) _attempts = _d.attempts.length;
+          }catch(e){}
+          if(pct < 80 && _attempts < 2){
+            return `<div style="font-size:13px;color:#E04B5A;text-align:center;font-weight:700;padding:12px 16px;background:#FFE4E7;border-radius:12px;margin-top:8px">⚠️ 80점 미만이에요. <b>다시 풀기</b>로 한 번 더 도전해야 다음으로 넘어갈 수 있어요. (재시험 1회)</div>`;
+          }
+        }
         return `<button class="btn-pill primary" onclick="window.location.href='${_url}'">📅 학습일정으로 →</button>`;
       }
       return `<button class="btn-pill primary" id="goHome">처음으로 🏠</button>`;
