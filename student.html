@@ -2364,15 +2364,35 @@ function renderSchedule(s){
         const gSess=sessions[grammarNextRowIdx];
         const gUnit=sessGrammarUnit[grammarNextRowIdx];
         if(gSess.isWeeklyTest){
-            // 🟠 주간평가: grammarwise를 wsc(훈련) 모드로 진입시켜야 함.
-            //   wkInfo.fromUnit이 시작 챕터, weekIdx가 주차 번호.
-            //   스케줄 셀(sched-cell)과 동일한 URL 패턴(&wsc=week&from=&to=) 사용.
+            // 🟠 주간평가: 5단계 훈련(wsc) → 80점 통과 시 6단계 실전(wex) → 실전 완료 시 done.
+            //   스케줄 셀과 동일한 URL 패턴(&wsc/&wex=week&from=&to=) 사용.
             const _gWk = sessWeeklyInfo[grammarNextRowIdx] || {};
             const _gWkIdx = _gWk.weekIdx || 1;
             const _gFrom = _gWk.fromUnit || parseInt(s.startGrammarPoint||'1');
             const _gTo = _gWk.toUnit || _gFrom;
-            const _gWeeklyUrl = `${getGrammarUrl(_gFrom)}&wsc=${_gWkIdx}&from=${_gFrom}&to=${_gTo}`;
-            grammarHW={label:`${s.textbooks?.grammar||'문법'} · 🟠 주간평가 훈련`,sub:`${fmtDate(gSess.date)} (${dayKor[gSess.date.getDay()]}요일)`,onclick:`window.location.href='${_gWeeklyUrl}'`,icon:'📝',phase:'훈련',isWeekly:true,weeklyDoneFn:`flowAdminGrammarSelf(${gUnit})`};
+            const _gBase = getGrammarUrl(_gFrom);
+            const _gWscUrl = `${_gBase}&wsc=${_gWkIdx}&from=${_gFrom}&to=${_gTo}`;
+            const _gWexUrl = `${_gBase}&wex=${_gWkIdx}&from=${_gFrom}&to=${_gTo}`;
+            // 훈련 통과 여부: attempts 중 passed===true 가 하나라도 있으면 통과
+            const _gWscData = _gRecords.weeklySC?.[_gWkIdx];
+            const _gWscAttempts = _gWscData?.attempts || [];
+            const _gWscPassed = _gWscAttempts.some(a=>a && a.passed);
+            // 실전 완료 여부: wex attempts가 하나라도 있으면 실전 봤음
+            const _gWexData = _gRecords.weeklyExam?.[_gWkIdx];
+            const _gWexAttempts = _gWexData?.attempts || [];
+            const _gWexDone = _gWexAttempts.length > 0;
+            const _gGrammarName = s.textbooks?.grammar||'문법';
+            const _gSub = `${fmtDate(gSess.date)} (${dayKor[gSess.date.getDay()]}요일)`;
+            if(_gWexDone){
+                // 6단계 실전까지 완료
+                grammarHW={label:`${_gGrammarName} · 🟠 주간평가 실전`,sub:_gSub,onclick:`window.location.href='${_gWexUrl}'`,icon:'📝',phase:'실전',isWeekly:true,weeklyPhase:'done'};
+            } else if(_gWscPassed){
+                // 훈련 통과 → 6단계 실전 차례
+                grammarHW={label:`${_gGrammarName} · 🟠 주간평가 실전`,sub:_gSub,onclick:`window.location.href='${_gWexUrl}'`,icon:'📝',phase:'실전',isWeekly:true,weeklyPhase:'exam'};
+            } else {
+                // 5단계 훈련 차례 (아직 80점 통과 못 함)
+                grammarHW={label:`${_gGrammarName} · 🟠 주간평가 훈련`,sub:_gSub,onclick:`window.location.href='${_gWscUrl}'`,icon:'📝',phase:'훈련',isWeekly:true,weeklyPhase:'self'};
+            }
         } else {
             const scD=_gRecords.selfChecks?.[gUnit];
             const lastSc=(scD?.attempts?.length>0)?scD.attempts[scD.attempts.length-1]:null;
@@ -2640,7 +2660,14 @@ function renderFlowWeek(ctx){
     }
     function classify(hw){
         if(!hw) return 'done';
-        if(hw.isWeekly) return 'weekly';
+        if(hw.isWeekly){
+            // 문법은 weeklyPhase로 5단계(self)/6단계(exam)/완료(done) 세분.
+            //   리딩·단어는 weeklyPhase 없음 → 기존 'weekly' 유지.
+            if(hw.weeklyPhase==='self') return 'weekly-self';
+            if(hw.weeklyPhase==='exam') return 'weekly-exam';
+            if(hw.weeklyPhase==='done') return 'weekly-done';
+            return 'weekly';
+        }
         if(hw.phase==='실전'){
             // 실전까지 끝났으면 'done'(실전 완료), 아직이면 'exam'(실전 진행 차례)
             return hw.examDone ? 'done' : 'exam';
@@ -2681,7 +2708,7 @@ function renderFlowWeek(ctx){
     }
 
     // 주간평가 단계인지 (어느 과목이든 weekly면 이번 주 학습은 다 끝나고 주간평가 차례)
-    const anyWeekly=subjects.some(x=>x.st==='weekly');
+    const anyWeekly=subjects.some(x=>x.st==='weekly'||x.st==='weekly-self'||x.st==='weekly-exam'||x.st==='weekly-done');
     // 전체 주간평가까지 완료 → 다음 주로 (기존 검증 로직)
     const hasIncomplete = rows.includes('>학습</span>')||rows.includes('sc-locked')||rows.includes('sc-pending')||rows.includes('admin-done-btn');
     const allDone = sessions.length>0 && !hasIncomplete;
@@ -2689,6 +2716,7 @@ function renderFlowWeek(ctx){
     // 카드 빌더
     function card(subj, mode){
         // mode: 'self-active' | 'self-done' | 'exam-locked' | 'exam-active' | 'done'
+        //       | 'wself'(주간 훈련) | 'wexam'(주간 실전) | 'wdone'(주간 실전 완료)
         const hw=subj.hw;
         let title, sub;
         if(mode==='self-done'){
@@ -2700,13 +2728,24 @@ function renderFlowWeek(ctx){
             title = `${subj.name.replace(/^[^ ]+ /,'')} 실전 완료`;
             const _sc = _getExamScore(subj.key);
             sub = (_sc!==null) ? `실전평가 ${_sc}점 · 완료` : '실전평가까지 완료했어요';
+        } else if(mode==='wdone'){
+            // 주간평가 실전까지 완료
+            title = hw ? hw.label : `${subj.name} 주간평가 완료`;
+            sub = '주간평가까지 완료했어요';
         } else {
+            // self-active / wself / wexam: hw의 label/sub 사용
             title = hw ? hw.label : `${subj.name} 완료`;
             sub = hw ? hw.sub : '실전평가까지 완료했어요';
         }
         let cta, onclick, locked=false, faded=false;
         if(mode==='self-active'){
             cta='시작 →'; onclick=hw.onclick;
+        } else if(mode==='wself'){
+            cta='시작 →'; onclick=hw.onclick;
+        } else if(mode==='wexam'){
+            cta='실전평가 →'; onclick=hw.onclick;
+        } else if(mode==='wdone'){
+            cta='✓ 완료'; onclick=''; faded=true;
         } else if(mode==='self-done'){
             cta='✓ 숙제 완료'; onclick=''; faded=true;
         } else if(mode==='exam-locked'){
@@ -2758,9 +2797,17 @@ function renderFlowWeek(ctx){
 
     // ── 주간평가 단계 ──
     if(anyWeekly){
-        // 주간평가 카드들 (있는 것만) — 클릭 가능
-        body += subjects.filter(x=>x.hw).map(x=>card(x,'self-active')).join('');
-        if(allDone){
+        // 주간평가 카드들 — 과목 상태에 따라 훈련(5)/실전(6)/완료 단계로 표시.
+        //   문법: weekly-self(훈련) → weekly-exam(실전) → weekly-done(완료)
+        //   리딩·단어: 아직 단계 분리 전이므로 기존 'weekly'는 훈련 카드(self-active)로 표시.
+        let _weeklyAllDone = true;
+        subjects.filter(x=>x.hw).forEach(x=>{
+            if(x.st==='weekly-self'){ body+=card(x,'wself'); _weeklyAllDone=false; }
+            else if(x.st==='weekly-exam'){ body+=card(x,'wexam'); _weeklyAllDone=false; }
+            else if(x.st==='weekly-done'){ body+=card(x,'wdone'); }
+            else { body+=card(x,'self-active'); _weeklyAllDone=false; } // 'weekly'(리딩·단어): 기존 동작
+        });
+        if(allDone || _weeklyAllDone){
             footer = `<div style="text-align:center;margin-top:16px">
                 <button onclick="advanceWeek()" style="background:#10B981;color:#fff;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(16,185,129,.3)">다음 주로 가기 →</button>
                 <div style="font-size:12px;color:var(--text3);margin-top:8px">이번 주 주간평가까지 모두 완료했어요!</div>
