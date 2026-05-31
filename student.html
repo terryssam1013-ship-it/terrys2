@@ -2336,9 +2336,14 @@ function renderSchedule(s){
             const lastSc=(scD?.attempts?.length>0)?scD.attempts[scD.attempts.length-1]:null;
             // 재시험 룰: 1회차 80점 미만은 '재시험', 80점 이상 OR 2회차는 '실전'
             const _scAttemptsHW = scD?.attempts?.length || 0;
-            // 이 Chapter 실전평가를 봤는지 (메모7번 리딩과 동일: 실전 완료 추적)
+            // 이 Chapter 실전평가를 '완료'했는지 (메모7번 리딩과 동일: 실전 완료 추적)
+            //  ⚠️ 완료 판정은 진도 전진용 _gExamCompleted와 동일 기준으로 통일한다.
+            //     (attempts>=2 || adminCompleted || best>=80). 단순 attempts>0(=1회 시도/저점)는 완료 아님.
+            //     이걸 안 맞추면: 테스트 중 grammarwise '시작→' 진입으로 생긴 1회 저점 실전 기록이
+            //     카드에선 '완료'로, 진도 로직에선 '미완료'로 엇갈려 4단계가 '실전 완료(0점)'로 떠버린다.
             const _gExamD=_gRecords.exams?.[gUnit];
-            const _gExamDone=!!(_gExamD && _gExamD.attempts?.length>0);
+            const _gExamDoneFn=(ex)=>{ if(!ex)return false; const a=ex.attempts||[]; if(a.length>=2)return true; if(ex.adminCompleted)return true; const b=Math.max(0,...a.map(x=>(x&&typeof x.pct==='number')?x.pct:(x&&typeof x.score==='number'?x.score:0))); return b>=80; };
+            const _gExamDone=_gExamDoneFn(_gExamD);
             // 실전까지 봤으면 phase '실전' 유지(완료로 표시), 아니면 기존 규칙
             const gPhase=_gExamDone?'실전':(!lastSc?'훈련':((lastSc.passed || _scAttemptsHW >= 2)?'실전':'재시험'));
             // 나모그: gUnit=Chapter, 라벨 "Chapter", URL에도 그대로
