@@ -2656,14 +2656,24 @@ function renderFlowWeek(ctx){
         const click = (onclick&&!locked)?`onclick="${onclick}"`:'';
         // 어드민 미리보기 전용: 시작 옆 "다음" 버튼 (이 과목만 현재 단계 0점완료 후 다음 단계)
         let adminNextBtn='';
+        let adminPrevBtn='';
         try{
             if(typeof isPreview==='function' && isPreview() && hw){
                 let _fn='';
                 if(mode==='self-active' && hw.selfDoneFn) _fn=hw.selfDoneFn;
+                else if(mode==='self-done' && hw.examDoneFn) _fn=hw.examDoneFn;
+                else if(mode==='exam-locked' && hw.examDoneFn) _fn=hw.examDoneFn;
                 else if(mode==='exam-active' && hw.examDoneFn) _fn=hw.examDoneFn;
                 if(_fn){
                     const _fnEsc=_fn.replace(/'/g,"\\'");
                     adminNextBtn=`<button onclick="event.stopPropagation();_runFlowFn('${_fnEsc}')" style="font-size:11px;padding:8px 12px;background:#F59E0B;border:none;color:#fff;border-radius:8px;cursor:pointer;margin-left:6px" title="이 과목 현재 단계 완료 후 다음 단계로">다음</button>`;
+                }
+                // ← 이전: 현재 단계 기록 삭제하고 한 칸 뒤로 (self-active는 더 뒤가 없으므로 제외)
+                let _prevKind='';
+                if(mode==='exam-active'||mode==='exam-locked') _prevKind='exam';   // 실전 기록 삭제 → 셀프 완료로
+                else if(mode==='self-done') _prevKind='self';                       // 셀프 기록 삭제 → 셀프 진행으로
+                if(_prevKind){
+                    adminPrevBtn=`<button onclick="event.stopPropagation();_adminPrevStep('${subj.key}','${_prevKind}')" style="font-size:11px;padding:8px 12px;background:#6B7280;border:none;color:#fff;border-radius:8px;cursor:pointer;margin-left:6px" title="이 과목 현재 단계 기록 삭제 후 이전 단계로">← 이전</button>`;
                 }
             }
         }catch(e){}
@@ -2673,7 +2683,7 @@ function renderFlowWeek(ctx){
                 <div class="nhw-title" style="font-size:14px">${title}</div>
                 <div class="nhw-meta">${sub}</div>
             </div>
-            <div class="nhw-right" style="display:flex;align-items:center"><button class="nhw-cta" style="font-size:12px;padding:8px 14px;background:${btnBg};border:none;color:#fff;border-radius:8px;cursor:${cursor}">${cta}</button>${adminNextBtn}</div>
+            <div class="nhw-right" style="display:flex;align-items:center"><button class="nhw-cta" style="font-size:12px;padding:8px 14px;background:${btnBg};border:none;color:#fff;border-radius:8px;cursor:${cursor}">${cta}</button>${adminPrevBtn}${adminNextBtn}</div>
         </div>`;
     }
 
@@ -2810,6 +2820,14 @@ function adminFlowPrevStep(){
 function _runFlowFn(fnStr){
     if(!fnStr) return;
     try{ (new Function(fnStr))(); }catch(e){ console.warn('flowFn 실행 실패:',fnStr,e); }
+}
+// 🛠 어드민 미리보기 전용: 과목별 "이전" — 현재 단계 기록 삭제하고 한 칸 뒤로
+function _adminPrevStep(subjectKey, kind){
+    if(typeof isPreview!=='function' || !isPreview()) return;
+    try{
+        _clearStepRecords(subjectKey, kind);
+        render();
+    }catch(e){ console.warn('이전 단계 실패',subjectKey,kind,e); }
 }
 
 // 특정 과목의 현재 단계 기록 삭제 (kind: 'exam' | 'self')
