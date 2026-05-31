@@ -2497,8 +2497,35 @@ function renderFlowWeek(ctx){
                 return best;
             }
             if(key==='reading'){
-                // 리딩 실전: rl_assess_ 계열. HW에 점수가 실려오면 우선 사용.
-                return null; // 리딩은 별도 표기 생략 (없으면 '완료했어요'로 표시)
+                // 리딩 실전: assess_<uid>_<book>_<unit>. 가장 최근(최고) 점수 반환.
+                try{
+                    const _sd=getStudentData()||{};
+                    const _book=_sd.textbooks?.reading||'';
+                    const _uid=getUser().id;
+                    const _prefix='assess_'+_uid+'_'+_book+'_';
+                    let best=null;
+                    // localStorage 직접 스캔 (rl_ 접두사 포함)
+                    for(let i=0;i<localStorage.length;i++){
+                        const k=localStorage.key(i);
+                        if(!k) continue;
+                        // RL_STORE 키는 'rl_' 접두사. assess_ 포함 여부로 매칭.
+                        if(k.indexOf(_prefix)!==-1 || k.indexOf('rl_'+_prefix)!==-1){
+                            try{
+                                const v=JSON.parse(localStorage.getItem(k));
+                                if(v&&typeof v.score==='number') best=Math.max(best===null?-1:best, v.score);
+                            }catch(e){}
+                        }
+                    }
+                    // RL_STORE(IndexedDB 캐시)도 확인
+                    if(window.RLStorage&&RLStorage.isReady()){
+                        RLStorage.keys().forEach(k=>{
+                            if(k.indexOf(_prefix)!==-1){
+                                try{const v=JSON.parse(RL_STORE.get(k)); if(v&&typeof v.score==='number') best=Math.max(best===null?-1:best,v.score);}catch(e){}
+                            }
+                        });
+                    }
+                    return best;
+                }catch(e){ return null; }
             }
         }catch(e){}
         return null;
@@ -6922,6 +6949,11 @@ function viewTestResults(){
     
     const totalR=state.testResult;
     return `<div style="max-width:680px;margin:30px auto">
+        ${isExam?`<div style="background:var(--green-light);border:1.5px solid #6EE7B7;border-radius:14px;padding:18px;text-align:center;margin-bottom:14px">
+            <div style="font-size:30px;margin-bottom:4px">📖🏆</div>
+            <div style="font-size:19px;font-weight:800;color:#065F46">리딩 실전평가 완료!</div>
+            <div style="font-size:13px;color:#047857;margin-top:8px;line-height:1.7">실전평가까지 끝냈어요 (${r.score}점). 학습일정에 점수가 기록됩니다.<br>다른 과목 실전평가도 끝낸 뒤 <b>[NEXT]</b>를 누르면 다음 학습일로 넘어갑니다.</div>
+        </div>`:''}
         <div class="card" style="text-align:center;padding:36px">
             <div class="score-circle" style="background:${passed?'var(--green-light)':'var(--red-light)'};color:${passed?'var(--green-dark)':'var(--red)'}">${r.score}<span class="lbl">점</span></div>
             <h2>${isExam?'실전평가 완료!':'테스트 완료!'}</h2>
