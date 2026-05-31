@@ -1879,8 +1879,21 @@ function renderSchedule(s){
         const curPt=parseInt(getCurrentGrammarPoint()||_startGrammarPt||'1');
         // 나모그: P=Chapter, 문마중: 4P=1Unit
         let curUnit=_isNamogRow?curPt:Math.ceil(curPt/4);
-        const examUnits=Object.keys(_gRecords.exams||{}).map(u=>parseInt(u)).filter(u=>!isNaN(u));
-        console.log('[문법] curPt:',curPt,'curUnit초기:',curUnit,'examUnits:',examUnits,'_startGrammarUnit:',_startGrammarUnit);
+        // 실전 '완료'(=진도 전진 자격) 판정: 메모 규칙 pct>=80 || attempts>=2 (점수무관 강제통과) || adminCompleted
+        //   1회 시도 후 미통과(재시험 전)인 실전은 아직 완료가 아니므로 전진시키지 않는다.
+        function _gExamCompleted(ex){
+            if(!ex) return false;
+            const att = ex.attempts || [];
+            if(att.length>=2) return true;            // 2회 시도 = 강제 통과
+            if(ex.adminCompleted) return true;
+            // 1회 시도라도 80점 이상이면 통과
+            const best = Math.max(0, ...att.map(a=>(a&&typeof a.pct==='number')?a.pct:(a&&typeof a.score==='number'?a.score:0)));
+            return best>=80;
+        }
+        const examUnits=Object.keys(_gRecords.exams||{})
+            .filter(u=>_gExamCompleted(_gRecords.exams[u]))   // ★ 완료된 실전만
+            .map(u=>parseInt(u)).filter(u=>!isNaN(u));
+        console.log('[문법] curPt:',curPt,'curUnit초기:',curUnit,'examUnits(완료만):',examUnits,'_startGrammarUnit:',_startGrammarUnit);
         // 🔧 flow가 실전(exam) 단계면, 실전 본 Chapter에서 다음으로 전진하지 않고 머문다.
         //   (NEXT[flowGoNextDay]를 눌러 phase가 selfcheck로 바뀌어야 다음 학습일로 전진)
         //   리딩의 _holdOnExam 처리와 동일 목적 — 실전 끝내도 NEXT 전엔 '실전 완료'로 그 자리에 머묾.
@@ -1957,7 +1970,8 @@ function renderSchedule(s){
         // (이전 코드에서 실전평가 시도 시 setCurrentPoint 호출 안 됐던 경우 보정)
         let _effectiveCurrentPt=parseInt(getCurrentGrammarPoint()||sd.startGrammarPoint||getUser()?.startGrammarPoint||'1');
         {
-            const _examUnits=Object.keys(_gRecords.exams||{}).map(u=>parseInt(u)).filter(u=>!isNaN(u));
+            const _exC=(ex)=>{ if(!ex)return false; const a=ex.attempts||[]; if(a.length>=2)return true; if(ex.adminCompleted)return true; const b=Math.max(0,...a.map(x=>(x&&typeof x.pct==='number')?x.pct:(x&&typeof x.score==='number'?x.score:0))); return b>=80; };
+            const _examUnits=Object.keys(_gRecords.exams||{}).filter(u=>_exC(_gRecords.exams[u])).map(u=>parseInt(u)).filter(u=>!isNaN(u));
             if(_examUnits.length>0){
                 const _maxExamUnit=Math.max(..._examUnits);
                 // 나모그: Chapter+1, 문마중: (Unit*4)+1
