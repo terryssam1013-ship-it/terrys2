@@ -1881,7 +1881,15 @@ function renderSchedule(s){
         let curUnit=_isNamogRow?curPt:Math.ceil(curPt/4);
         const examUnits=Object.keys(_gRecords.exams||{}).map(u=>parseInt(u)).filter(u=>!isNaN(u));
         console.log('[문법] curPt:',curPt,'curUnit초기:',curUnit,'examUnits:',examUnits,'_startGrammarUnit:',_startGrammarUnit);
-        if(examUnits.length>0){
+        // 🔧 flow가 실전(exam) 단계면, 실전 본 Chapter에서 다음으로 전진하지 않고 머문다.
+        //   (NEXT[flowGoNextDay]를 눌러 phase가 selfcheck로 바뀌어야 다음 학습일로 전진)
+        //   리딩의 _holdOnExam 처리와 동일 목적 — 실전 끝내도 NEXT 전엔 '실전 완료'로 그 자리에 머묾.
+        if(_holdOnExam && examUnits.length>0){
+            const _maxExamU=Math.max(...examUnits);
+            // 실전 본 Chapter가 현재(또는 그 이상)면 그 Chapter에 고정
+            if(_maxExamU>=curUnit) curUnit=_maxExamU;
+            // hold 중에는 아래 maxExamUnit+1 전진 로직을 건너뛴다
+        }else if(examUnits.length>0){
             const maxExamUnit=Math.max(...examUnits);
             if(maxExamUnit+1>curUnit)curUnit=maxExamUnit+1;
         }
@@ -2334,7 +2342,11 @@ function renderSchedule(s){
             const lastSc=(scD?.attempts?.length>0)?scD.attempts[scD.attempts.length-1]:null;
             // 재시험 룰: 1회차 80점 미만은 '재시험', 80점 이상 OR 2회차는 '실전'
             const _scAttemptsHW = scD?.attempts?.length || 0;
-            const gPhase=!lastSc?'훈련':((lastSc.passed || _scAttemptsHW >= 2)?'실전':'재시험');
+            // 이 Chapter 실전평가를 봤는지 (메모7번 리딩과 동일: 실전 완료 추적)
+            const _gExamD=_gRecords.exams?.[gUnit];
+            const _gExamDone=!!(_gExamD && _gExamD.attempts?.length>0);
+            // 실전까지 봤으면 phase '실전' 유지(완료로 표시), 아니면 기존 규칙
+            const gPhase=_gExamDone?'실전':(!lastSc?'훈련':((lastSc.passed || _scAttemptsHW >= 2)?'실전':'재시험'));
             // 나모그: gUnit=Chapter, 라벨 "Chapter", URL에도 그대로
             // 문마중: gUnit=Unit, 라벨 "Unit", URL은 (Unit-1)*4+1
             const _gHWPt=_isNamogRow?gUnit:(gUnit-1)*4+1;
@@ -2343,7 +2355,7 @@ function renderSchedule(s){
             const _gOpenUrl = (gPhase==='재시험')
                 ? `${getGrammarUrl(_gHWPt)}&scReview=${gUnit}`
                 : `${getGrammarUrl(_gHWPt)}`;
-            grammarHW={label:`${s.textbooks?.grammar||'문법'} · ${_gHWLabel} · ${gPhase}`,sub:`${fmtDate(gSess.date)} (${dayKor[gSess.date.getDay()]}요일)`,onclick:`window.location.href='${_gOpenUrl}'`,icon:'📝',phase:gPhase,examOnclick:`window.location.href='${getGrammarUrl(_gHWPt)}&exam=${gUnit}'`,selfDoneFn:`flowAdminGrammarSelf(${gUnit})`,examDoneFn:`flowAdminGrammarExam(${gUnit})`};
+            grammarHW={label:`${s.textbooks?.grammar||'문법'} · ${_gHWLabel} · ${gPhase}`,sub:`${fmtDate(gSess.date)} (${dayKor[gSess.date.getDay()]}요일)`,onclick:`window.location.href='${_gOpenUrl}'`,icon:'📝',phase:gPhase,examDone:_gExamDone,examOnclick:`window.location.href='${getGrammarUrl(_gHWPt)}&exam=${gUnit}'`,selfDoneFn:`flowAdminGrammarSelf(${gUnit})`,examDoneFn:`flowAdminGrammarExam(${gUnit})`};
         }
     }
     // 🔤 단어
