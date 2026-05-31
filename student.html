@@ -2419,11 +2419,16 @@ function renderSchedule(s){
                 try{vScAll2=JSON.parse(RL_STORE.get(vScKey)||'{}');}catch(e){}
                 try{vReAll2=JSON.parse(RL_STORE.get(vReKey)||'{}');}catch(e){}
                 const vk=_vocabDeckId+'/'+vDayStart+'_'+hpd;
-                if(!vReAll2[vk]){
-                    const _vsc=vScAll2[vk];
+                const _vReDone = !!vReAll2[vk];   // 실전(realexam) 완료 여부
+                const _vScRec = vScAll2[vk];       // 셀프(훈련) 기록
+                // 🔑 리딩·문법과 동일: 실전을 끝냈어도 flow가 'exam' 단계면 NEXT 전까지
+                //    이 세션에 머물러 '실전 완료'로 표시 (단어만 실전 끝내자마자 다음날로 튀던 버그 방지)
+                const _vHold = _holdOnExam && _vReDone && _vScRec;
+                if(!_vReDone || _vHold){
+                    const _vsc=_vScRec;
                     const _vscDone=_vsc && (_vsc.passed || (_vsc.attempts||0)>=2);
-                    const vPhase=_vscDone?'실전':'훈련';
-                    vocabHW={label:`${deckName2} · DAY${vDayStart}${hpd>1?'~'+(vDayStart+hpd-1):''} · ${vPhase}`,sub:`${fmtDate(vs.date)} (${dayKor[vs.date.getDay()]}요일)`,onclick:`openVocabTrain('${_vocabDeckId}',${vDayStart},${hpd})`,icon:'🔤',phase:vPhase,examOnclick:`openVocabExam('${_vocabDeckId}',${vDayStart},${hpd})`,selfDoneFn:`flowAdminVocabSelf('${_vocabDeckId}',${vDayStart},${hpd})`,examDoneFn:`flowAdminVocabExam('${_vocabDeckId}',${vDayStart},${hpd})`};
+                    const vPhase=_vReDone?'실전':(_vscDone?'실전':'훈련');
+                    vocabHW={label:`${deckName2} · DAY${vDayStart}${hpd>1?'~'+(vDayStart+hpd-1):''} · ${vPhase}`,sub:`${fmtDate(vs.date)} (${dayKor[vs.date.getDay()]}요일)`,onclick:`openVocabTrain('${_vocabDeckId}',${vDayStart},${hpd})`,icon:'🔤',phase:vPhase,examDone:_vReDone,examOnclick:`openVocabExam('${_vocabDeckId}',${vDayStart},${hpd})`,selfDoneFn:`flowAdminVocabSelf('${_vocabDeckId}',${vDayStart},${hpd})`,examDoneFn:`flowAdminVocabExam('${_vocabDeckId}',${vDayStart},${hpd})`};
                     break;
                 }
             }
