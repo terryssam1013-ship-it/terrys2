@@ -2123,9 +2123,11 @@ function renderSchedule(s){
                         const selfCheckTried=scRec2&&(scRec2.attempts||0)>0;
                         const scAttempts2=scRec2?(scRec2.attempts||0):0;
                         
-                        if(selfCheckPassed){
-                            // 셀프체크 통과 → 훈련 칸에 점수 표시 (녹색 클릭 가능, 종합 학습 기록 화면 열림)
-                            vocabTrainCell=`<span class="sched-cell sc-active" onclick="openVocabSummary('${vocabDeckId}',${dayStart},${homeworkPerDay})" title="셀프체크 ${scRec2.bestScore}점 통과 · 클릭해서 학습 기록 보기">${scRec2.bestScore}점</span>`;
+                        if(selfCheckPassed || (scRec2 && scAttempts2>=2)){
+                            // 셀프체크 통과(80점↑) 또는 재시험 2회차 완료(강제통과) → 훈련 칸 점수 표시 + 실전 열림
+                            const _scoreShown = (scRec2&&typeof scRec2.bestScore==='number')?scRec2.bestScore:0;
+                            const _forcedW = !selfCheckPassed && scAttempts2>=2; // 점수 미달이지만 재시험 완료로 강제통과
+                            vocabTrainCell=`<span class="sched-cell sc-active" onclick="openVocabSummary('${vocabDeckId}',${dayStart},${homeworkPerDay})" title="셀프체크 ${_scoreShown}점${_forcedW?' · 재시험 완료(강제 통과)':' 통과'} · 클릭해서 학습 기록 보기">${_scoreShown}점</span>`;
                             // 실전평가 점수 조회
                             const reKey=_vcKey('rl_vc_realexam');
                             let reRaw=null;
@@ -2141,8 +2143,7 @@ function renderSchedule(s){
                                 if(isPreview()) vocabExamCell+=`<br><span class="admin-done-btn" onclick="event.stopPropagation();adminCompleteVocabExam('${vocabDeckId}',${dayStart},${homeworkPerDay})">완료</span>`;
                             }
                         }else if(selfCheckTried){
-                            // 셀프체크 미통과(80점 미만) — 학습일정에 점수 표시 + 실전 잠금
-                            // attempts<2면 재시험 가능, attempts>=2면 재시험 완료(점수 무관 통과되어야 정상이지만 옛 데이터 호환)
+                            // 셀프체크 1회차 미통과(80점 미만) & 아직 재시험 전 — 점수 표시 + 재시험 안내 + 실전 잠금
                             const canRetake=scAttempts2<2;
                             const retakeMsg=canRetake?`재시험 ${scAttempts2}/1회 (클릭하여 재시험)`:'재시험 완료';
                             vocabTrainCell=`<span class="sched-cell sc-done" style="background:#FEF3C7;color:#92400E" onclick="openVocabTrain('${vocabDeckId}',${dayStart},${homeworkPerDay})" title="셀프체크 ${scRec2.bestScore}점 (목표점수 미달) · ${retakeMsg}">${scRec2.bestScore}점</span>`;
@@ -2235,8 +2236,8 @@ function renderSchedule(s){
                             // 훈련 셀
                             if(wTrainRec){
                                 vocabTrainCell=`<span class="sched-cell sc-weekly" title="주간평가 훈련 ${wTrainRec.bestScore}점" onclick="openVocabWeeklyExam('${vocabDeckId}','${firstDayId}','train',${weekDayStart},${weekDayEnd})">${wTrainRec.bestScore}점</span>`;
-                                // 훈련 통과 시 실전 활성 (adminCompleted도 통과 처리)
-                                if(wTrainRec.bestScore>=weTarget||wTrainRec.adminCompleted){
+                                // 훈련 통과 시 실전 활성 (80점↑ 또는 재시험 2회차 강제통과, adminCompleted도 통과)
+                                if(wTrainRec.bestScore>=weTarget||(wTrainRec.attempts||0)>=2||wTrainRec.adminCompleted){
                                     if(wExamRec){
                                         vocabExamCell=`<span class="sched-cell sc-weekly" title="주간평가 실전 ${wExamRec.bestScore}점" onclick="openVocabWeeklyExam('${vocabDeckId}','${firstDayId}','exam',${weekDayStart},${weekDayEnd})">${wExamRec.bestScore}점</span>`;
                                     }else{
