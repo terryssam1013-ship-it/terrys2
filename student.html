@@ -1672,7 +1672,6 @@ function renderSchedule(s){
     try{ const _fr=getFlowState(); if(_fr&&_fr.phase) _flowPhaseRL=_fr.phase; }catch(e){}
     const _holdOnExam = (_flowPhaseRL==='exam');
     let currentIdx=-1;
-    let _holdCandidateIdx=-1;   // exam 단계에서 '머물 수 있는' 가장 최근 실전완료 단원(미완료 단원 없을 때만 사용)
     for(let i=0;i<sessions.length;i++){
         const sess=sessions[i];
         if(sess.isWeeklyTest){
@@ -1693,20 +1692,32 @@ function renderSchedule(s){
             const unit=ba[uk];
             if(unit&&(unit.articles||[]).length>0){
                 const sc=getUnitScores(bookName,uk,unit.articles.length);
-                // 셀프(훈련)는 했지만 실전 미완료 → 여기가 진짜 현재 숙제. 최우선, 즉시 확정.
-                //   (월요일 실전 차례든 수요일 실전 차례든, '셀프 끝 + 실전 안 봄'인 단원이 그 학습일 숙제)
+                // 셀프(훈련)는 했지만 실전 미완료 → 여기가 현재 숙제
                 if(sc.exam===null){currentIdx=i;break;}
-                // 실전까지 끝남 + flow가 exam 단계 → '머물 수 있는' 후보로만 기억(아직 break 안 함).
-                //   뒤에 실전 미완료 단원이 있으면 위 if에서 그쪽이 잡힘(우선).
-                //   끝까지 미완료 단원이 없으면 = 방금 끝낸 가장 최근 실전 단원 → 그 자리에 머물러 "실전 완료" 표시.
-                if(_holdOnExam && sc.trainRec){ _holdCandidateIdx=i; }
+                // 실전까지 끝남 + flow가 exam 단계 + 셀프(trainRec) 기록 있음
+                //   → 방금 이 단계에서 끝낸 Unit. NEXT 전까지 여기 머물러 "실전 완료" 표시.
+                //   ⚠️ 단, 이 Unit보다 '뒤에' 셀프완료+실전미완 Unit이 있으면 머물지 않는다.
+                //     (4단계[수 실전]: 월 Unit1 실전완료 + 수 Unit2 셀프완료 → Unit2가 진짜 이번 실전 숙제.
+                //      여기서 Unit1에 머물면 실전 구간이 통째로 빠진다.
+                //      2단계[월 실전]: 다음 Unit2는 셀프 안 함 → 뒤 미완 단원 없음 → Unit1에 정상적으로 머묾.)
+                if(_holdOnExam && sc.trainRec){
+                    let _laterPending=false;
+                    for(let k=i+1;k<sessions.length;k++){
+                        const ks=sessions[k];
+                        if(ks.isWeeklyTest)continue;
+                        const kuk='unit'+ks.unitNum;const kun=ba[kuk];
+                        if(!kun||(kun.articles||[]).length===0)continue;
+                        const ksc=getUnitScores(bookName,kuk,kun.articles.length);
+                        if(ksc.trainRec && ksc.exam===null){ _laterPending=true; break; }
+                    }
+                    if(!_laterPending){ currentIdx=i; break; }
+                    // 뒤에 미완 단원 있으면 여기서 멈추지 않고 계속 → 그 단원이 위 (sc.exam===null)에서 잡힘
+                }
             } else {
                 currentIdx=i;break;
             }
         }
     }
-    // 실전 미완료 단원을 못 찾았고(currentIdx 미확정) exam 단계 hold 후보가 있으면 그 단원에 머묾
-    if(currentIdx===-1 && _holdCandidateIdx>=0){ currentIdx=_holdCandidateIdx; }
     
     // 다음 숙제 카드용 정보
     let nextHomework=null;
@@ -1882,28 +1893,11 @@ function renderSchedule(s){
         // 🔧 flow가 실전(exam) 단계면, 실전 본 Chapter에서 다음으로 전진하지 않고 머문다.
         //   (NEXT[flowGoNextDay]를 눌러 phase가 selfcheck로 바뀌어야 다음 학습일로 전진)
         //   리딩의 _holdOnExam 처리와 동일 목적 — 실전 끝내도 NEXT 전엔 '실전 완료'로 그 자리에 머묾.
-        //   ⚠️ 단, hold로 무조건 _maxExamU에 고정하면 안 된다. '셀프 완료 + 실전 미완료'인 더 뒤 Chapter가
-        //      있으면(예: 월 Ch1 실전완료 후 수 Ch2 셀프완료) 그 Chapter가 진짜 이번 실전 숙제다.
-        //      → 먼저 그런 Chapter를 찾고, 없을 때만 _maxExamU에 머문다.
-        let _gExamPendingUnit=-1;  // 셀프 했지만 실전 미완료인 가장 빠른 Chapter
-        {
-            // 자연 진도 상한 추정: 완료 실전 최대치 +1 (없으면 시작 Unit). 그 범위에서 미완료 셀프 Chapter 탐색.
-            const _maxDone = examUnits.length>0 ? Math.max(...examUnits) : (_startGrammarUnit-1);
-            for(let u=_startGrammarUnit; u<=_maxDone+1; u++){
-                const scD=_gRecords.selfChecks?.[u];
-                const exD=_gRecords.exams?.[u];
-                const hasSc=scD?.attempts?.length>0;
-                const hasEx=!!(exD && _gExamCompleted(exD));
-                if(hasSc && !hasEx){ _gExamPendingUnit=u; break; }
-            }
-        }
-        if(_holdOnExam && _gExamPendingUnit>=0){
-            // 실전 미완료(셀프 완료) Chapter가 있으면 그 Chapter가 이번 실전 숙제 → 거기로 확정
-            curUnit=_gExamPendingUnit;
-        }else if(_holdOnExam && examUnits.length>0){
+        if(_holdOnExam && examUnits.length>0){
             const _maxExamU=Math.max(...examUnits);
-            // 실전 본 Chapter가 현재(또는 그 이상)면 그 Chapter에 고정 (머물기)
+            // 실전 본 Chapter가 현재(또는 그 이상)면 그 Chapter에 고정
             if(_maxExamU>=curUnit) curUnit=_maxExamU;
+            // hold 중에는 아래 maxExamUnit+1 전진 로직을 건너뛴다
         }else if(examUnits.length>0){
             const maxExamUnit=Math.max(...examUnits);
             if(maxExamUnit+1>curUnit)curUnit=maxExamUnit+1;
@@ -2358,14 +2352,9 @@ function renderSchedule(s){
             const lastSc=(scD?.attempts?.length>0)?scD.attempts[scD.attempts.length-1]:null;
             // 재시험 룰: 1회차 80점 미만은 '재시험', 80점 이상 OR 2회차는 '실전'
             const _scAttemptsHW = scD?.attempts?.length || 0;
-            // 이 Chapter 실전평가를 '완료'했는지 (메모7번 리딩과 동일: 실전 완료 추적)
-            //  ⚠️ 완료 판정은 진도 전진용 _gExamCompleted와 동일 기준으로 통일한다.
-            //     (attempts>=2 || adminCompleted || best>=80). 단순 attempts>0(=1회 시도/저점)는 완료 아님.
-            //     이걸 안 맞추면: 테스트 중 grammarwise '시작→' 진입으로 생긴 1회 저점 실전 기록이
-            //     카드에선 '완료'로, 진도 로직에선 '미완료'로 엇갈려 4단계가 '실전 완료(0점)'로 떠버린다.
+            // 이 Chapter 실전평가를 봤는지 (메모7번 리딩과 동일: 실전 완료 추적)
             const _gExamD=_gRecords.exams?.[gUnit];
-            const _gExamDoneFn=(ex)=>{ if(!ex)return false; const a=ex.attempts||[]; if(a.length>=2)return true; if(ex.adminCompleted)return true; const b=Math.max(0,...a.map(x=>(x&&typeof x.pct==='number')?x.pct:(x&&typeof x.score==='number'?x.score:0))); return b>=80; };
-            const _gExamDone=_gExamDoneFn(_gExamD);
+            const _gExamDone=!!(_gExamD && _gExamD.attempts?.length>0);
             // 실전까지 봤으면 phase '실전' 유지(완료로 표시), 아니면 기존 규칙
             const gPhase=_gExamDone?'실전':(!lastSc?'훈련':((lastSc.passed || _scAttemptsHW >= 2)?'실전':'재시험'));
             // 나모그: gUnit=Chapter, 라벨 "Chapter", URL에도 그대로
@@ -2388,9 +2377,6 @@ function renderSchedule(s){
             const hpd=Math.max(1,parseInt(_sdVocab.vocabHomeworkPerDay)||1);
             const vocabStartDate2=_sdVocab.startVocabDate?new Date(_sdVocab.startVocabDate+'T00:00:00'):null;
             const deckName2=vDeck.name||_vocabDeckId;
-            // exam 단계 hold 후보: 실전 미완료 DAY를 끝까지 못 찾았을 때만 쓸 '가장 최근 실전 완료 DAY'.
-            //   ⚠️ 리딩·문법과 동일 버그 방지 — 월요일 실전완료 DAY1에서 바로 break하면 수요일 DAY2(실전 미완)에 못 감.
-            let _vHoldCand=null;
             // 가장 가까운 미완료 단어 세션 찾기 (학습일 + 평가일)
             for(let i=0;i<sessions.length;i++){
                 const vs=sessions[i];
@@ -2451,23 +2437,17 @@ function renderSchedule(s){
                 const vk=_vocabDeckId+'/'+vDayStart+'_'+hpd;
                 const _vReDone = !!vReAll2[vk];   // 실전(realexam) 완료 여부
                 const _vScRec = vScAll2[vk];       // 셀프(훈련) 기록
-                const _mkVocabHW=()=>{
+                // 🔑 리딩·문법과 동일: 실전을 끝냈어도 flow가 'exam' 단계면 NEXT 전까지
+                //    이 세션에 머물러 '실전 완료'로 표시 (단어만 실전 끝내자마자 다음날로 튀던 버그 방지)
+                const _vHold = _holdOnExam && _vReDone && _vScRec;
+                if(!_vReDone || _vHold){
                     const _vsc=_vScRec;
                     const _vscDone=_vsc && (_vsc.passed || (_vsc.attempts||0)>=2);
                     const vPhase=_vReDone?'실전':(_vscDone?'실전':'훈련');
-                    return {label:`${deckName2} · DAY${vDayStart}${hpd>1?'~'+(vDayStart+hpd-1):''} · ${vPhase}`,sub:`${fmtDate(vs.date)} (${dayKor[vs.date.getDay()]}요일)`,onclick:`openVocabTrain('${_vocabDeckId}',${vDayStart},${hpd})`,icon:'🔤',phase:vPhase,examDone:_vReDone,examOnclick:`openVocabExam('${_vocabDeckId}',${vDayStart},${hpd})`,selfDoneFn:`flowAdminVocabSelf('${_vocabDeckId}',${vDayStart},${hpd})`,examDoneFn:`flowAdminVocabExam('${_vocabDeckId}',${vDayStart},${hpd})`};
-                };
-                if(!_vReDone){
-                    // 실전 미완료 DAY = 진짜 현재 숙제 → 즉시 확정
-                    vocabHW=_mkVocabHW();
+                    vocabHW={label:`${deckName2} · DAY${vDayStart}${hpd>1?'~'+(vDayStart+hpd-1):''} · ${vPhase}`,sub:`${fmtDate(vs.date)} (${dayKor[vs.date.getDay()]}요일)`,onclick:`openVocabTrain('${_vocabDeckId}',${vDayStart},${hpd})`,icon:'🔤',phase:vPhase,examDone:_vReDone,examOnclick:`openVocabExam('${_vocabDeckId}',${vDayStart},${hpd})`,selfDoneFn:`flowAdminVocabSelf('${_vocabDeckId}',${vDayStart},${hpd})`,examDoneFn:`flowAdminVocabExam('${_vocabDeckId}',${vDayStart},${hpd})`};
                     break;
                 }
-                // 실전 완료 DAY인데 flow가 exam 단계 + 셀프 기록 있음 → 머물 수 있는 후보로만 기억(계속 탐색).
-                //   뒤에 실전 미완료 DAY가 있으면 그쪽이 우선. 없으면 이 후보(가장 최근 실전완료 DAY)에 머묾.
-                if(_holdOnExam && _vReDone && _vScRec){ _vHoldCand=_mkVocabHW(); }
             }
-            // 실전 미완료 DAY를 못 찾았고 exam 단계 hold 후보가 있으면 그 DAY에 머묾
-            if(!vocabHW && _vHoldCand){ vocabHW=_vHoldCand; }
         }
     }
     
