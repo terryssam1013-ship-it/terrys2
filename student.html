@@ -2364,7 +2364,7 @@ function renderSchedule(s){
         const gSess=sessions[grammarNextRowIdx];
         const gUnit=sessGrammarUnit[grammarNextRowIdx];
         if(gSess.isWeeklyTest){
-            grammarHW={label:`${s.textbooks?.grammar||'문법'} · 🟠 주간평가`,sub:`${fmtDate(gSess.date)} (${dayKor[gSess.date.getDay()]}요일)`,onclick:`window.location.href='${getGrammarUrl(parseInt(s.startGrammarPoint||'1'))}'`,icon:'📝',phase:'훈련',isWeekly:true,weeklyDoneFn:`flowAdminGrammarSelf(${gUnit})`};
+            grammarHW={label:`${s.textbooks?.grammar||'문법'} · 🟠 주간평가 훈련`,sub:`${fmtDate(gSess.date)} (${dayKor[gSess.date.getDay()]}요일)`,onclick:`window.location.href='${getGrammarUrl(parseInt(s.startGrammarPoint||'1'))}'`,icon:'📝',phase:'훈련',isWeekly:true,weeklyDoneFn:`flowAdminGrammarSelf(${gUnit})`};
         } else {
             const scD=_gRecords.selfChecks?.[gUnit];
             const lastSc=(scD?.attempts?.length>0)?scD.attempts[scD.attempts.length-1]:null;
