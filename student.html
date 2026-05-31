@@ -2661,9 +2661,9 @@ function renderFlowWeek(ctx){
             if(typeof isPreview==='function' && isPreview() && hw){
                 let _fn='';
                 if(mode==='self-active' && hw.selfDoneFn) _fn=hw.selfDoneFn;
-                else if(mode==='self-done' && hw.examDoneFn) _fn=hw.examDoneFn;
-                else if(mode==='exam-locked' && hw.examDoneFn) _fn=hw.examDoneFn;
                 else if(mode==='exam-active' && hw.examDoneFn) _fn=hw.examDoneFn;
+                // ⚠️ self-done(셀프 완료)에는 "다음" 없음 — 셀프 단계에서 실전을 미리 완료시키면 안 됨.
+                //    실전은 NEXT로 실전 단계 진입 후 처리. (exam-locked도 마찬가지로 제외)
                 if(_fn){
                     const _fnEsc=_fn.replace(/'/g,"\\'");
                     adminNextBtn=`<button onclick="event.stopPropagation();_runFlowFn('${_fnEsc}')" style="font-size:11px;padding:8px 12px;background:#F59E0B;border:none;color:#fff;border-radius:8px;cursor:pointer;margin-left:6px" title="이 과목 현재 단계 완료 후 다음 단계로">다음</button>`;
