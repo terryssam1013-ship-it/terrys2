@@ -2816,6 +2816,8 @@ function renderFlowWeek(ctx){
     // ── 주간평가 단계 (1~4단계와 동일한 phase+NEXT 구조) ──
     if(anyWeekly){
         const weeklyStage = (flow.weeklyStage==='exam') ? 'exam' : 'train';
+        // weeklyStage가 아직 없으면 train으로 고정 저장 (어드민 패널/단계 인식용)
+        if(!flow.weeklyStage){ try{ const _st=getFlowState()||{}; _st.weeklyStage='train'; setFlowState(_st); }catch(e){} }
         const wsubs = subjects.filter(x=>x.hw && x.hw.isWeekly);
         if(weeklyStage==='train'){
             // 5단계: 훈련 카드. 통과한 과목은 완료 표시, 아닌 과목은 진행.
