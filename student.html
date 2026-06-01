@@ -1293,28 +1293,45 @@ function flowAdminVocabExam(deckId,dayStart,homeworkPerDay){
     }catch(e){}
     render();
 }
-// 리딩 주간평가 완료 (셀프+실전 한번에)
-function flowAdminReadingWeekly(weekId){
+// 리딩 주간평가 완료 — mode='train'(훈련=복습완료만) / 'exam'(실전까지)
+function flowAdminReadingWeekly(weekId,mode){
     if(!isPreview())return;
-    try{ adminCompleteReadingWeekly(weekId,'exam'); }catch(e){ render(); }
+    try{ adminCompleteReadingWeekly(weekId,(mode==='exam')?'exam':'train'); }catch(e){ render(); }
 }
-// 단어 주간평가 완료 (그 주차 묶음만, train+exam 한번에)
-function flowAdminVocabWeekly(deckId,wStart,wEnd){
+// 문법 주간평가 완료 — mode='train'(주간 셀프체크만) / 'exam'(주간 실전까지)
+function flowAdminGrammarWeekly(weekIdx,fromUnit,toUnit,mode){
+    if(!isPreview())return;
+    try{ adminCompleteGrammarWeekly(weekIdx,fromUnit,toUnit,(mode==='exam')?'exam':'train'); }catch(e){ render(); }
+}
+// 단어 주간평가 완료 (그 주차 묶음만)
+//   mode='train' → 주간 훈련(weeklyexam_train)만 / mode='exam' → 실전(weeklyexam_exam)만
+//   (이전엔 train+exam을 한꺼번에 기록 → 5단계 버튼 한 번에 실전까지 완료되던 버그)
+function flowAdminVocabWeekly(deckId,wStart,wEnd,mode){
     if(!isPreview())return;
     const rec=_FLOW_ADMIN_REC();
     const wk=deckId+'/'+wStart+'_'+wEnd;
-    try{
-        const tk=_vcKey('rl_vc_weeklyexam_train');
-        const tAll=JSON.parse(RL_STORE.get(tk)||'{}');
-        tAll[wk]={...rec,deckId:deckId,startDay:wStart,endDay:wEnd};
-        RL_STORE.set(tk,JSON.stringify(tAll));
-    }catch(e){}
-    try{
-        const ek=_vcKey('rl_vc_weeklyexam_exam');
-        const eAll=JSON.parse(RL_STORE.get(ek)||'{}');
-        eAll[wk]={...rec,deckId:deckId,startDay:wStart,endDay:wEnd};
-        RL_STORE.set(ek,JSON.stringify(eAll));
-    }catch(e){}
+    const _m=(mode==='exam')?'exam':'train';
+    if(_m==='train'){
+        try{
+            const tk=_vcKey('rl_vc_weeklyexam_train');
+            const tAll=JSON.parse(RL_STORE.get(tk)||'{}');
+            tAll[wk]={...rec,deckId:deckId,startDay:wStart,endDay:wEnd};
+            RL_STORE.set(tk,JSON.stringify(tAll));
+        }catch(e){}
+    } else {
+        // 실전 단계: 훈련 기록이 없으면 함께 보강(통과 전제) + 실전 기록
+        try{
+            const tk=_vcKey('rl_vc_weeklyexam_train');
+            const tAll=JSON.parse(RL_STORE.get(tk)||'{}');
+            if(!tAll[wk]){ tAll[wk]={...rec,deckId:deckId,startDay:wStart,endDay:wEnd}; RL_STORE.set(tk,JSON.stringify(tAll)); }
+        }catch(e){}
+        try{
+            const ek=_vcKey('rl_vc_weeklyexam_exam');
+            const eAll=JSON.parse(RL_STORE.get(ek)||'{}');
+            eAll[wk]={...rec,deckId:deckId,startDay:wStart,endDay:wEnd};
+            RL_STORE.set(ek,JSON.stringify(eAll));
+        }catch(e){}
+    }
     render();
 }
 // 예문에서 target 단어를 다른 색깔로 강조 (#7)
@@ -2369,7 +2386,7 @@ function renderSchedule(s){
             // 주간 단계 전환용 공통 필드: 리딩 훈련 통과 = trainDone(복습완료), 실전 응시 = examDone
             const _rTrainPassed=!!(_wkRec&&_wkRec.trainDone);
             const _rExamDone=!!(_wkRec&&_wkRec.examDone);
-            readingHW={label:`${bookName} · 🟠 주간평가 ${_wkPhase}`,sub:`${fmtDate(nh.date)} (${nh.dayKor}요일)`,onclick:`openWeeklyTest('${_wkId}','${_wkPhase==='실전'?'exam':'train'}')`,icon:'📖',phase:_wkPhase,isWeekly:true,weeklyDoneFn:`flowAdminReadingWeekly('${_wkId}')`,
+            readingHW={label:`${bookName} · 🟠 주간평가 ${_wkPhase}`,sub:`${fmtDate(nh.date)} (${nh.dayKor}요일)`,onclick:`openWeeklyTest('${_wkId}','${_wkPhase==='실전'?'exam':'train'}')`,icon:'📖',phase:_wkPhase,isWeekly:true,weeklyDoneFn:`flowAdminReadingWeekly('${_wkId}','__MODE__')`,
                 wTrainClick:`openWeeklyTest('${_wkId}','train')`, wExamClick:`openWeeklyTest('${_wkId}','exam')`, wTrainPassed:_rTrainPassed, wExamDone:_rExamDone};
         } else {
             readingHW={label:`${bookName} · Unit ${nh.unitNum} · ${nh.phase}`,sub:`${fmtDate(nh.date)} (${nh.dayKor}요일)`,onclick:`openUnit('${nh.uk}')`,icon:'📖',phase:nh.phase,examDone:nh.examDone,examOnclick:`openUnit('${nh.uk}')`,selfDoneFn:`flowAdminReadingSelf('${nh.uk}')`,examDoneFn:`flowAdminReadingExam('${nh.uk}')`};
@@ -2402,7 +2419,7 @@ function renderSchedule(s){
             const _gGrammarName = s.textbooks?.grammar||'문법';
             const _gSub = `${fmtDate(gSess.date)} (${dayKor[gSess.date.getDay()]}요일)`;
             const _gPhaseLabel = _gWscPassed ? '실전' : '훈련';
-            grammarHW={label:`${_gGrammarName} · 🟠 주간평가 ${_gPhaseLabel}`,sub:_gSub,onclick:`window.location.href='${_gWscPassed?_gWexUrl:_gWscUrl}'`,icon:'📝',phase:_gPhaseLabel,isWeekly:true,
+            grammarHW={label:`${_gGrammarName} · 🟠 주간평가 ${_gPhaseLabel}`,sub:_gSub,onclick:`window.location.href='${_gWscPassed?_gWexUrl:_gWscUrl}'`,icon:'📝',phase:_gPhaseLabel,isWeekly:true,weeklyDoneFn:`flowAdminGrammarWeekly(${_gWkIdx},${_gFrom},${_gTo},'__MODE__')`,
                 wTrainClick:`window.location.href='${_gWscUrl}'`, wExamClick:`window.location.href='${_gWexUrl}'`, wTrainPassed:_gWscPassed, wExamDone:_gWexDone};
         } else {
             const scD=_gRecords.selfChecks?.[gUnit];
@@ -2474,7 +2491,7 @@ function renderSchedule(s){
                             const _vTrainPassed=!!_vTrainRec&&((_vTrainRec.bestScore>=_vTarget)||((_vTrainRec.attempts||0)>=2)||_vTrainRec.adminCompleted);
                             const _vDayId=vDeck.days[wDS2-1]?.id||'';
                             const wPhase=_vTrainPassed?'실전':'훈련';
-                            vocabHW={label:`${deckName2} · 🟠 주간평가 ${wPhase}`,sub:`${fmtDate(vs.date)} (${dayKor[vs.date.getDay()]}요일)`,onclick:`openVocabWeeklyExam('${_vocabDeckId}','${_vDayId}','${_vTrainPassed?'exam':'train'}',${wDS2},${wDE2})`,icon:'🔤',phase:wPhase,isWeekly:true,weeklyDoneFn:`flowAdminVocabWeekly('${_vocabDeckId}',${wDS2},${wDE2})`,
+                            vocabHW={label:`${deckName2} · 🟠 주간평가 ${wPhase}`,sub:`${fmtDate(vs.date)} (${dayKor[vs.date.getDay()]}요일)`,onclick:`openVocabWeeklyExam('${_vocabDeckId}','${_vDayId}','${_vTrainPassed?'exam':'train'}',${wDS2},${wDE2})`,icon:'🔤',phase:wPhase,isWeekly:true,weeklyDoneFn:`flowAdminVocabWeekly('${_vocabDeckId}',${wDS2},${wDE2},'__MODE__')`,
                                 wTrainClick:`openVocabWeeklyExam('${_vocabDeckId}','${_vDayId}','train',${wDS2},${wDE2})`, wExamClick:`openVocabWeeklyExam('${_vocabDeckId}','${_vDayId}','exam',${wDS2},${wDE2})`, wTrainPassed:_vTrainPassed, wExamDone:_vExamDone};
                             break;
                         }
@@ -2538,7 +2555,131 @@ function renderSchedule(s){
             }
         }
     }
-    
+
+    // ════════════════════════════════════════════════════════════════
+    // 🟠 주간평가 주간 동기화 (근본 해결: 통과해도 세 과목 카드 항상 유지)
+    //   문제: 세 과목 HW는 각자 "다음 미완료 항목" 진도탐색에 의존 →
+    //         한 과목이 통과/완료하면 그 과목 HW=null → 화면에서 사라짐.
+    //   해결: 한 과목이라도 주간평가(isWeekly)면 = 이번 주가 주간평가 주간.
+    //         그 주간평가일(Friday 세션)을 공통 앵커로 잡고, 아직 isWeekly가
+    //         아닌 과목은 그 주차의 주간평가 HW를 합성한다(통과여부는 실제 저장값에서 읽음).
+    //   → 5·6단계에서 세 과목이 항상 떠 있고, 통과한 건 wTrainPassed/wExamDone로만 표시.
+    // ════════════════════════════════════════════════════════════════
+    {
+      const _anyWeeklyHW = (readingHW&&readingHW.isWeekly)||(grammarHW&&grammarHW.isWeekly)||(vocabHW&&vocabHW.isWeekly);
+      if(_anyWeeklyHW){
+        // ── 공통 앵커: 진행 중인 주간평가일 세션 인덱스 찾기 ──
+        //   세 과목이 같은 주간평가일을 공유. 기존 weekly HW가 가리키는 주(가장 이른 미완료 주간평가일).
+        let _wkIdxSess=-1;
+        for(let i=0;i<sessions.length;i++){ if(sessions[i].isWeeklyTest){ _wkIdxSess=i; break; } }
+        // sessions 내 첫 주간평가일이 없으면 합성 불가 → 그대로 둠
+        if(_wkIdxSess>=0){
+          const _wkSess=sessions[_wkIdxSess];
+          const _wkDate=_wkSess.date;
+          const _wkSub=`${fmtDate(_wkDate)} (${dayKor[_wkDate.getDay()]}요일)`;
+
+          // ── 리딩 주간 HW 합성 ──
+          if(!(readingHW&&readingHW.isWeekly)){
+            const _wkId=fmtDateISO(_wkDate);
+            const _wkRec=LS.g('weekly_'+getUser().id+'_'+bookName+'_'+_wkId);
+            const _rTrainPassed=!!(_wkRec&&_wkRec.trainDone);
+            const _rExamDone=!!(_wkRec&&_wkRec.examDone);
+            const _wkPhase=_rTrainPassed?'실전':'훈련';
+            readingHW={label:`${bookName} · 🟠 주간평가 ${_wkPhase}`,sub:_wkSub,onclick:`openWeeklyTest('${_wkId}','${_wkPhase==='실전'?'exam':'train'}')`,icon:'📖',phase:_wkPhase,isWeekly:true,weeklyDoneFn:`flowAdminReadingWeekly('${_wkId}','__MODE__')`,
+                wTrainClick:`openWeeklyTest('${_wkId}','train')`, wExamClick:`openWeeklyTest('${_wkId}','exam')`, wTrainPassed:_rTrainPassed, wExamDone:_rExamDone};
+          }
+
+          // ── 문법 주간 HW 합성 ──
+          if(s.textbooks?.grammar && !(grammarHW&&grammarHW.isWeekly)){
+            // 그 주간평가일의 주차정보(weekIdx/fromUnit/toUnit). 없으면 인접 학습일에서 추정.
+            let _gWk=sessWeeklyInfo[_wkIdxSess];
+            if(!_gWk){
+              // 같은 주(월요일 기준)의 학습일에서 weekIdx/범위 보강
+              const _wkMon=getWeekMonday(_wkDate).getTime();
+              let _fromU=null,_toU=null,_wIdxGuess=null;
+              for(let j=0;j<sessions.length;j++){
+                if(sessions[j].isWeeklyTest)continue;
+                if(getWeekMonday(sessions[j].date).getTime()!==_wkMon)continue;
+                const _u=sessGrammarUnit[j];
+                if(typeof _u==='number'){ if(_fromU===null||_u<_fromU)_fromU=_u; if(_toU===null||_u>_toU)_toU=_u; }
+              }
+              // weekIdx: 그 세션 앞쪽 주간평가일 개수+1 (sessWeeklyInfo 패턴과 동일 근사)
+              let _cnt=0; for(let j=0;j<_wkIdxSess;j++){ if(sessions[j].isWeeklyTest)_cnt++; }
+              _wIdxGuess=_cnt+1;
+              if(_fromU!==null) _gWk={weekIdx:_wIdxGuess,fromUnit:_fromU,toUnit:_toU};
+            }
+            if(_gWk){
+              const _gWkIdx=_gWk.weekIdx||1;
+              const _gFrom=_gWk.fromUnit||parseInt(s.startGrammarPoint||'1');
+              const _gTo=_gWk.toUnit||_gFrom;
+              const _gBase=getGrammarUrl(_gFrom);
+              const _gWscUrl=`${_gBase}&wsc=${_gWkIdx}&from=${_gFrom}&to=${_gTo}`;
+              const _gWexUrl=`${_gBase}&wex=${_gWkIdx}&from=${_gFrom}&to=${_gTo}`;
+              const _gWscData=_gRecords.weeklySC?.[_gWkIdx];
+              const _gWscAttempts=_gWscData?.attempts||[];
+              const _gWscPassed=_gWscAttempts.some(a=>a&&a.passed)||_gWscAttempts.length>=2;
+              const _gWexData=_gRecords.weeklyExam?.[_gWkIdx];
+              const _gWexAttempts=_gWexData?.attempts||[];
+              const _gWexDone=_gWexAttempts.length>0;
+              const _gGrammarName=s.textbooks?.grammar||'문법';
+              const _gPhaseLabel=_gWscPassed?'실전':'훈련';
+              grammarHW={label:`${_gGrammarName} · 🟠 주간평가 ${_gPhaseLabel}`,sub:_wkSub,onclick:`window.location.href='${_gWscPassed?_gWexUrl:_gWscUrl}'`,icon:'📝',phase:_gPhaseLabel,isWeekly:true,weeklyDoneFn:`flowAdminGrammarWeekly(${_gWkIdx},${_gFrom},${_gTo},'__MODE__')`,
+                  wTrainClick:`window.location.href='${_gWscUrl}'`, wExamClick:`window.location.href='${_gWexUrl}'`, wTrainPassed:_gWscPassed, wExamDone:_gWexDone};
+            }
+          }
+
+          // ── 단어 주간 HW 합성 ──
+          if(_vocabDeckId && !(vocabHW&&vocabHW.isWeekly)){
+            try{
+              const _vIdx=LS.g('vocab_index')||{};
+              const _vDeck=_vIdx[_vocabDeckId];
+              if(_vDeck&&(_vDeck.days||[]).length>0){
+                const _hpd=Math.max(1,parseInt(_sdVocab.vocabHomeworkPerDay)||1);
+                const _vStartDate=_sdVocab.startVocabDate?new Date(_sdVocab.startVocabDate+'T00:00:00'):null;
+                const _deckName=_vDeck.name||_vocabDeckId;
+                // 그 주(월요일 기준) 학습일들로 day 범위 산출 (vocabHW 본문과 동일 로직)
+                const _wMon=getWeekMonday(_wkDate);
+                const _wLearn=allSessions.filter(x=>!x.isWeeklyTest&&getWeekMonday(x.date).getTime()===_wMon.getTime()&&x.date<_wkDate);
+                if(_wLearn.length>0){
+                  let _wDS=null,_wDE=null;
+                  for(const wl of _wLearn){
+                    if(_vStartDate&&wl.date<_vStartDate)continue;
+                    let li=0;
+                    for(const as3 of allSessions){
+                      if(as3.isWeeklyTest)continue;
+                      if(_vStartDate&&as3.date<_vStartDate)continue;
+                      if(as3.date.getTime()===wl.date.getTime())break;
+                      li++;
+                    }
+                    const ds=Math.max(1,parseInt(_sdVocab.startVocabDay)||1)+li*_hpd;
+                    const de=Math.min(ds+_hpd-1,_vDeck.days.length);
+                    if(_wDS===null||ds<_wDS)_wDS=ds;
+                    if(_wDE===null||de>_wDE)_wDE=de;
+                  }
+                  if(_wDS!==null){
+                    const _wk2=_vocabDeckId+'/'+_wDS+'_'+_wDE;
+                    let _weTA={},_weEA={};
+                    try{_weTA=JSON.parse(RL_STORE.get(_vcKey('rl_vc_weeklyexam_train'))||'{}');}catch(e){}
+                    try{_weEA=JSON.parse(RL_STORE.get(_vcKey('rl_vc_weeklyexam_exam'))||'{}');}catch(e){}
+                    const _vTrainRec=_weTA[_wk2];
+                    const _vExamDone=!!_weEA[_wk2];
+                    const _vSettings=LS.g('settings')||{};
+                    const _vTarget=(_vSettings.vocabFlow?.weeklyExam?.target)||80;
+                    const _vTrainPassed=!!_vTrainRec&&((_vTrainRec.bestScore>=_vTarget)||((_vTrainRec.attempts||0)>=2)||_vTrainRec.adminCompleted);
+                    const _vDayId=_vDeck.days[_wDS-1]?.id||'';
+                    const _wPhase=_vTrainPassed?'실전':'훈련';
+                    vocabHW={label:`${_deckName} · 🟠 주간평가 ${_wPhase}`,sub:_wkSub,onclick:`openVocabWeeklyExam('${_vocabDeckId}','${_vDayId}','${_vTrainPassed?'exam':'train'}',${_wDS},${_wDE})`,icon:'🔤',phase:_wPhase,isWeekly:true,weeklyDoneFn:`flowAdminVocabWeekly('${_vocabDeckId}',${_wDS},${_wDE},'__MODE__')`,
+                        wTrainClick:`openVocabWeeklyExam('${_vocabDeckId}','${_vDayId}','train',${_wDS},${_wDE})`, wExamClick:`openVocabWeeklyExam('${_vocabDeckId}','${_vDayId}','exam',${_wDS},${_wDE})`, wTrainPassed:_vTrainPassed, wExamDone:_vExamDone};
+                  }
+                }
+              }
+            }catch(e){ console.warn('[주간동기화] 단어 합성 실패',e); }
+          }
+          console.log('[주간동기화] 세 과목 주간HW 합성완료',{reading:!!(readingHW&&readingHW.isWeekly),grammar:!!(grammarHW&&grammarHW.isWeekly),vocab:!!(vocabHW&&vocabHW.isWeekly)});
+        }
+      }
+    }
+
     const _hwCard=(hw,color)=>hw?`<div class="next-homework-card" style="border-left:4px solid ${color};margin-bottom:8px;padding:12px 16px;cursor:pointer" onclick="${hw.onclick}">
         <div class="nhw-left" style="flex:1">
             <div class="nhw-badge" style="font-size:11px">${hw.icon} 다음 숙제</div>
@@ -2822,14 +2963,17 @@ function renderFlowWeek(ctx){
         const wsubs = subjects.filter(x=>x);
         const _isW = x => !!(x.hw && x.hw.isWeekly);
         if(weeklyStage==='train'){
-            // 5단계: 훈련 카드. 통과(또는 HW없음=이미통과)면 완료 표시.
-            const _trainPassedOf = x => _isW(x) ? !!x.hw.wTrainPassed : true;
-            const trainAllPassed = wsubs.every(_trainPassedOf);
+            // 5단계: 훈련 카드. 통과해야 완료 표시.
+            //  ⚠️ 안전장치: weekly HW가 아닌 과목(합성 실패 등 비정상)은 '통과'로 보지 않는다.
+            //     예전엔 hw없음=통과(true)로 처리 → 안 눌렀는데 NEXT가 열리는 위험이 있었음.
+            //     이제 미완료(false)로 간주해, 합성이 어떤 이유로 실패해도 NEXT가 절대 조기 개방되지 않음.
+            const _trainPassedOf = x => _isW(x) ? !!x.hw.wTrainPassed : false;
+            const trainAllPassed = wsubs.length>0 && wsubs.every(_trainPassedOf);
             wsubs.forEach(x=>{
-                if(_isW(x) && !x.hw.wTrainPassed) body+=card(x,'wtrain');
-                else body+=card(x,'wtrain-done');
+                if(_isW(x) && x.hw.wTrainPassed) body+=card(x,'wtrain-done');
+                else body+=card(x,'wtrain'); // weekly 아님 or 미통과 → 훈련 진행 카드(미완료)
             });
-            if(trainAllPassed && wsubs.length>0){
+            if(trainAllPassed){
                 footer = `<div style="text-align:center;margin-top:16px">
                     <button onclick="flowWeeklyToExam()" style="background:#10B981;color:#fff;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(16,185,129,.3)">NEXT →</button>
                     <div style="font-size:12px;color:var(--text3);margin-top:8px">모든 과목 주간평가 훈련 완료! NEXT를 누르면 실전평가가 열립니다</div>
@@ -2838,14 +2982,15 @@ function renderFlowWeek(ctx){
                 footer = `<div style="text-align:center;margin-top:14px;font-size:13px;color:var(--text3)">🟠 세 과목 주간평가 훈련을 모두 통과하면 [NEXT]가 열려요</div>`;
             }
         } else {
-            // 6단계: 실전 카드. 응시(또는 HW없음=이미응시)면 완료 표시.
-            const _examDoneOf = x => _isW(x) ? !!x.hw.wExamDone : true;
-            const examAllDone = wsubs.every(_examDoneOf);
+            // 6단계: 실전 카드. 응시해야 완료 표시.
+            //  ⚠️ 안전장치: weekly HW가 아닌 과목은 '응시함'으로 보지 않는다(미완료 처리).
+            const _examDoneOf = x => _isW(x) ? !!x.hw.wExamDone : false;
+            const examAllDone = wsubs.length>0 && wsubs.every(_examDoneOf);
             wsubs.forEach(x=>{
-                if(_isW(x) && !x.hw.wExamDone) body+=card(x,'wexam');
-                else body+=card(x,'wexam-done');
+                if(_isW(x) && x.hw.wExamDone) body+=card(x,'wexam-done');
+                else body+=card(x,'wexam'); // weekly 아님 or 미응시 → 실전 진행 카드(미완료)
             });
-            if(examAllDone && wsubs.length>0){
+            if(examAllDone){
                 footer = `<div style="text-align:center;margin-top:16px">
                     <button onclick="flowWeeklyNextWeek()" style="background:#3B82F6;color:#fff;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(59,130,246,.3)">NEXT →</button>
                     <div style="font-size:12px;color:var(--text3);margin-top:8px">주간평가 실전까지 완료! NEXT를 누르면 다음 주 일정으로 넘어갑니다</div>
@@ -2912,8 +3057,10 @@ function wrapFlow(inner){
                 <div style="font-size:13px;font-weight:800;color:#92400E;text-align:center;margin-bottom:4px">🛠 어드민 단계 이동 (미리보기 전용)</div>
                 <div style="font-size:12px;color:#B45309;text-align:center;margin-bottom:14px">현재: <b>${phaseLabel}</b> · 다음 단계로 넘기면 지금 단계는 <b>0점 처리</b>됩니다</div>
                 <div style="display:flex;gap:10px;justify-content:center">
+                    <button onclick="adminFlowPrevStep()" style="flex:1;max-width:180px;background:#6B7280;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer">← 이전 단계</button>
                     <button onclick="adminFlowNextStep()" style="flex:1;max-width:260px;background:#F59E0B;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer">다음 단계 →</button>
                 </div>
+                <div style="font-size:11px;color:#B45309;text-align:center;margin-top:8px">이전 단계: 현재 단계 기록을 삭제하고 한 단계 뒤로</div>
             </div>`;
         }
     }catch(e){}
@@ -2936,8 +3083,8 @@ function adminFlowNextStep(){
         if(_isWeekly){
             // 주간평가 단계: weeklyStage(train/exam)에 따라 처리
             const stage = _fs.weeklyStage==='exam' ? 'exam' : 'train';
-            // 세 과목 weekly 완료 처리 (train+exam 한 번에 기록하는 weeklyDoneFn 호출)
-            subs.forEach(s=>{ if(s.isWeekly && s.weeklyDoneFn){ try{ _runFlowFn(s.weeklyDoneFn); }catch(e){console.warn('주간완료 실패',s.key,e);} } });
+            // 현재 단계만 완료 처리 (5단계=훈련만 / 6단계=실전). __MODE__ 치환.
+            subs.forEach(s=>{ if(s.isWeekly && s.weeklyDoneFn){ try{ _runFlowFn(String(s.weeklyDoneFn).replace('__MODE__',stage)); }catch(e){console.warn('주간완료 실패',s.key,e);} } });
             if(stage==='train'){
                 setTimeout(()=>{ try{ flowWeeklyToExam(); }catch(e){} }, 60);   // 5→6
             } else {
@@ -2965,10 +3112,27 @@ function adminFlowNextStep(){
 
 function adminFlowPrevStep(){
     if(!isPreview()){alert('미리보기 모드에서만 사용 가능합니다');return;}
-    const ph=(getFlowState()||{}).phase||'selfcheck';
+    const _fs=getFlowState()||{};
+    const ph=_fs.phase||'selfcheck';
+    const subs=window._flowSubjects||[];
+    const _isWeekly = subs.some(s=>s.isWeekly) || !!_fs.weeklyStage;
     if(!confirm('이전 단계로 되돌립니다.\n현재 단계의 학습 기록(점수)이 삭제됩니다. 계속할까요?')) return;
     try{
-        const subs=window._flowSubjects||[];
+        if(_isWeekly){
+            const stage = _fs.weeklyStage==='exam' ? 'exam' : 'train';
+            if(stage==='exam'){
+                // 6단계(실전) → 5단계(훈련): 세 과목 주간 '실전' 기록만 삭제, weeklyStage=train
+                subs.forEach(s=>{ if(s.isWeekly) _clearWeeklyStepRecords(s.key,'wexam',s.weeklyDoneFn); });
+                const st=getFlowState()||{}; st.weeklyStage='train'; setFlowState(st);
+            } else {
+                // 5단계(훈련) → 그 주 셀프체크 이후(실전 단계)로: 주간 훈련 기록 삭제 + weeklyStage 해제
+                //   (이전 주로 되돌리는 대신, 주간평가 진입 직전인 그 주 실전 단계로 안전 복귀)
+                subs.forEach(s=>{ if(s.isWeekly) _clearWeeklyStepRecords(s.key,'wtrain',s.weeklyDoneFn); });
+                const st=getFlowState()||{}; delete st.weeklyStage; st.phase='exam'; setFlowState(st);
+            }
+            render();
+            return;
+        }
         if(ph==='exam'){
             // 실전 단계 → 셀프 단계로: 현재 과목들의 '실전 기록'만 삭제하고 phase=selfcheck
             subs.forEach(s=>_clearStepRecords(s.key,'exam'));
@@ -2982,6 +3146,55 @@ function adminFlowPrevStep(){
         }
         render();
     }catch(e){ alert('되돌리기 중 오류: '+e.message); }
+}
+
+// 특정 과목의 주간평가 현재 단계 기록 삭제 (kind: 'wexam' 실전 | 'wtrain' 훈련)
+//   _flowSubjects의 weeklyDoneFn에서 식별자(주차/범위)를 역파싱해 해당 키만 정리.
+function _clearWeeklyStepRecords(subjectKey, kind, doneFnStr){
+    try{
+        const uid=getUser().id;
+        const sd=getStudentData()||{};
+        if(subjectKey==='reading'){
+            // flowAdminReadingWeekly('<weekId>','__MODE__')
+            const m=String(doneFnStr||'').match(/flowAdminReadingWeekly\('([^']+)'/);
+            if(!m) return;
+            const weekId=m[1];
+            const book=sd.textbooks?.reading||'';
+            const lsKey='weekly_'+uid+'_'+book+'_'+weekId;
+            const rec=LS.g(lsKey);
+            if(rec){
+                if(kind==='wexam'){ delete rec.examDone; delete rec.score; delete rec.grade; }
+                else { delete rec.trainDone; delete rec.examDone; delete rec.score; delete rec.grade; delete rec.adminCompleted; }
+                LS.s(lsKey,rec);
+            }
+        } else if(subjectKey==='grammar'){
+            // flowAdminGrammarWeekly(<weekIdx>,<from>,<to>,'__MODE__')
+            const m=String(doneFnStr||'').match(/flowAdminGrammarWeekly\((\d+)\s*,/);
+            if(!m) return;
+            const weekIdx=m[1];
+            const prefix=_grammarKeyPrefix();
+            const exKey=prefix+'wex_'+weekIdx;       // 주간 실전
+            const scKey=prefix+'wsc_'+weekIdx;       // 주간 셀프체크(훈련)
+            const killExam=()=>{ try{ localStorage.removeItem(exKey); }catch(e){} try{ if(window.RLStorage&&RLStorage.isReady())RLStorage.removeItem(exKey);}catch(e){} };
+            const killTrain=()=>{ try{ localStorage.removeItem(scKey); }catch(e){} try{ if(window.RLStorage&&RLStorage.isReady())RLStorage.removeItem(scKey);}catch(e){} };
+            if(kind==='wexam'){ killExam(); }
+            else { killExam(); killTrain(); }
+        } else if(subjectKey==='vocab'){
+            // flowAdminVocabWeekly('<deckId>',<wStart>,<wEnd>,'__MODE__')
+            const m=String(doneFnStr||'').match(/flowAdminVocabWeekly\('([^']+)'\s*,\s*(\d+)\s*,\s*(\d+)/);
+            if(!m) return;
+            const wk=m[1]+'/'+m[2]+'_'+m[3];
+            const delFromDict=(base)=>{
+                try{
+                    const key=_vcKey(base);
+                    const all=JSON.parse(RL_STORE.get(key)||'{}');
+                    if(all[wk]){ delete all[wk]; RL_STORE.set(key,JSON.stringify(all)); }
+                }catch(e){}
+            };
+            if(kind==='wexam'){ delFromDict('rl_vc_weeklyexam_exam'); }
+            else { delFromDict('rl_vc_weeklyexam_exam'); delFromDict('rl_vc_weeklyexam_train'); }
+        }
+    }catch(e){ console.warn('주간 기록 삭제 실패',subjectKey,kind,e); }
 }
 
 // onclick 문자열(예: "flowAdminReadingExam('unit3')")을 실제 호출
