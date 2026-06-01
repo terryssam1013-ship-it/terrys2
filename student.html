@@ -2702,7 +2702,11 @@ function renderFlowWeek(ctx){
         window._flowSubjects = subjects.map(x=>({
             key:x.key, st:x.st,
             selfDoneFn: x.hw && x.hw.selfDoneFn,
-            examDoneFn: x.hw && x.hw.examDoneFn
+            examDoneFn: x.hw && x.hw.examDoneFn,
+            isWeekly: !!(x.hw && x.hw.isWeekly),
+            weeklyDoneFn: x.hw && x.hw.weeklyDoneFn,
+            wTrainPassed: !!(x.hw && x.hw.wTrainPassed),
+            wExamDone: !!(x.hw && x.hw.wExamDone)
         }));
     }catch(e){ window._flowSubjects = []; }
 
@@ -2891,8 +2895,12 @@ function wrapFlow(inner){
     let adminPanel='';
     try{
         if(typeof isPreview==='function' && isPreview()){
-            const ph=(getFlowState()||{}).phase||'selfcheck';
-            const phaseLabel = ph==='exam' ? '실전평가 단계' : (ph==='weekly'?'주간평가 단계':'셀프체크 단계');
+            const _fs=getFlowState()||{};
+            const ph=_fs.phase||'selfcheck';
+            let phaseLabel;
+            if(_fs.weeklyStage==='exam') phaseLabel='주간평가 실전(6단계)';
+            else if(_fs.weeklyStage) phaseLabel='주간평가 훈련(5단계)';
+            else phaseLabel = ph==='exam' ? '실전평가 단계' : '셀프체크 단계';
             adminPanel=`
             <div style="margin-top:28px;padding:18px;border:2px dashed #F59E0B;border-radius:14px;background:#FFFBEB">
                 <div style="font-size:13px;font-weight:800;color:#92400E;text-align:center;margin-bottom:4px">🛠 어드민 단계 이동 (미리보기 전용)</div>
@@ -2915,9 +2923,21 @@ function wrapFlow(inner){
 function adminFlowNextStep(){
     if(!isPreview()){alert('미리보기 모드에서만 사용 가능합니다');return;}
     const subs=window._flowSubjects||[];
-    const ph=(getFlowState()||{}).phase||'selfcheck';
+    const _fs=getFlowState()||{};
+    const ph=_fs.phase||'selfcheck';
+    const _isWeekly = subs.some(s=>s.isWeekly);
     try{
-        if(ph==='selfcheck'){
+        if(_isWeekly){
+            // 주간평가 단계: weeklyStage(train/exam)에 따라 처리
+            const stage = _fs.weeklyStage==='exam' ? 'exam' : 'train';
+            // 세 과목 weekly 완료 처리 (train+exam 한 번에 기록하는 weeklyDoneFn 호출)
+            subs.forEach(s=>{ if(s.isWeekly && s.weeklyDoneFn){ try{ _runFlowFn(s.weeklyDoneFn); }catch(e){console.warn('주간완료 실패',s.key,e);} } });
+            if(stage==='train'){
+                setTimeout(()=>{ try{ flowWeeklyToExam(); }catch(e){} }, 60);   // 5→6
+            } else {
+                setTimeout(()=>{ try{ flowWeeklyNextWeek(); }catch(e){} }, 60);  // 6→다음주
+            }
+        } else if(ph==='selfcheck'){
             // 셀프 안 끝난 과목 전부 셀프 완료(0점) 처리 → 그 다음 flowCompleteHomework(실전 단계로)
             subs.forEach(s=>{
                 if(s.st==='self' && s.selfDoneFn){ try{ _runFlowFn(s.selfDoneFn); }catch(e){console.warn('셀프완료 실패',s.key,e);} }
@@ -2932,7 +2952,6 @@ function adminFlowNextStep(){
             });
             setTimeout(()=>{ try{ flowGoNextDay(); }catch(e){} }, 60);
         } else {
-            // 주간평가 단계 등 → 기존 주 넘기기
             setTimeout(()=>{ try{ advanceWeek(); }catch(e){} }, 60);
         }
     }catch(e){ alert('단계 이동 중 오류: '+e.message); }
