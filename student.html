@@ -2452,14 +2452,23 @@ function renderSchedule(s){
                         }
                         if(wDS2!==null){
                             const wk2=_vocabDeckId+'/'+wDS2+'_'+wDE2;
-                            if(!weEA2[wk2]){
-                                const weTrainKey2=_vcKey('rl_vc_weeklyexam_train');
-                                let weTA2={};
-                                try{weTA2=JSON.parse(RL_STORE.get(weTrainKey2)||'{}');}catch(e){}
-                                const wPhase=weTA2[wk2]?'실전':'훈련';
-                                vocabHW={label:`${deckName2} · 🟠 주간평가 ${wPhase}`,sub:`${fmtDate(vs.date)} (${dayKor[vs.date.getDay()]}요일)`,onclick:`openVocabWeeklyExam('${_vocabDeckId}','${vDeck.days[wDS2-1]?.id||''}','${wPhase==='실전'?'exam':'train'}',${wDS2},${wDE2})`,icon:'🔤',phase:wPhase,isWeekly:true,weeklyDoneFn:`flowAdminVocabWeekly('${_vocabDeckId}',${wDS2},${wDE2})`};
-                                break;
-                            }
+                            const weTrainKey2=_vcKey('rl_vc_weeklyexam_train');
+                            let weTA2={};
+                            try{weTA2=JSON.parse(RL_STORE.get(weTrainKey2)||'{}');}catch(e){}
+                            const _vTrainRec=weTA2[wk2];
+                            const _vExamDone=!!weEA2[wk2];
+                            // 훈련 통과 기준: 스케줄 셀과 동일 (bestScore>=target | attempts>=2 강제통과 | adminCompleted)
+                            const _vSettings=LS.g('settings')||{};
+                            const _vTarget=(_vSettings.vocabFlow?.weeklyExam?.target)||80;
+                            const _vTrainPassed=!!_vTrainRec&&((_vTrainRec.bestScore>=_vTarget)||((_vTrainRec.attempts||0)>=2)||_vTrainRec.adminCompleted);
+                            // 단계: 실전완료(done) → 훈련통과(exam) → 훈련중(self)
+                            let _vWeeklyPhase, wPhase;
+                            if(_vExamDone){ _vWeeklyPhase='done'; wPhase='실전'; }
+                            else if(_vTrainPassed){ _vWeeklyPhase='exam'; wPhase='실전'; }
+                            else { _vWeeklyPhase='self'; wPhase='훈련'; }
+                            const _vMode=(_vWeeklyPhase==='exam')?'exam':'train';
+                            vocabHW={label:`${deckName2} · 🟠 주간평가 ${wPhase}`,sub:`${fmtDate(vs.date)} (${dayKor[vs.date.getDay()]}요일)`,onclick:`openVocabWeeklyExam('${_vocabDeckId}','${vDeck.days[wDS2-1]?.id||''}','${_vMode}',${wDS2},${wDE2})`,icon:'🔤',phase:wPhase,isWeekly:true,weeklyPhase:_vWeeklyPhase,weeklyDoneFn:`flowAdminVocabWeekly('${_vocabDeckId}',${wDS2},${wDE2})`};
+                            break;
                         }
                     }
                     continue;
