@@ -921,14 +921,18 @@ function getStudentData(){const u=getUser();if(!u)return null;const users=LS.g('
 // ── 단어 학습기록 키 (학생별 분리) ──
 // vocab-learn.html과 동일 규칙: 미리보기는 rl_pv_<sid>_, 로그인 학생은 _<sid> 접미.
 //   학생 간 단어 기록이 공용 키로 섞이던 문제를 막기 위함.
+// 🟠 구간 점프(어드민) 전용 플래그: true면 미리보기여도 '실제 학생 키'(rl_vc_..._<sid>)를 사용.
+//   → 구간 점프가 Firebase(student_state/<sid>)에 반영되도록. 평소(과목별 버튼/미리보기)는 false.
+let _forceRealVcKey = false;
 function _vcKey(base){
     // base 예: 'rl_vc_selfcheck', 'rl_vc_realexam', 'rl_vc_daycheck',
     //          'rl_vc_weeklyexam_train', 'rl_vc_weeklyexam_exam'
     try{
-        if(typeof isPreview==='function' && isPreview()){
+        // 구간 점프 중에는 미리보기여도 실제 학생 키 사용 (학생 계정 반영)
+        if(!_forceRealVcKey && typeof isPreview==='function' && isPreview()){
             const pid=getPreviewId();
             if(pid){
-                // rl_vc_selfcheck → rl_pv_<pid>_vc_selfcheck
+                // rl_vc_selfcheck → rl_pv_<pid>_vc_selfcheck (미리보기 격리)
                 return base.replace(/^rl_/, 'rl_pv_'+pid+'_');
             }
         }
@@ -1270,13 +1274,12 @@ function flowAdminVocabSelf(deckId,dayStart,homeworkPerDay){
         }
         RL_STORE.set(dcKey,JSON.stringify(dcAll));
     }catch(e){}
-    // 셀프체크: 이 묶음 키 하나만
+    // 셀프체크: 이 묶음 키 하나만 (기존 기록 있으면 보존 — 0점 덮어쓰기 방지)
     try{
         const scKey=_vcKey('rl_vc_selfcheck');
         const scAll=JSON.parse(RL_STORE.get(scKey)||'{}');
         const scK=deckId+'/'+dayStart+'_'+homeworkPerDay;
-        scAll[scK]={...rec,deckId:deckId,startDay:dayStart,homework:homeworkPerDay};
-        RL_STORE.set(scKey,JSON.stringify(scAll));
+        if(!scAll[scK]){ scAll[scK]={...rec,deckId:deckId,startDay:dayStart,homework:homeworkPerDay}; RL_STORE.set(scKey,JSON.stringify(scAll)); }
     }catch(e){}
     render();
 }
@@ -1288,8 +1291,7 @@ function flowAdminVocabExam(deckId,dayStart,homeworkPerDay){
         const reKey=_vcKey('rl_vc_realexam');
         const reAll=JSON.parse(RL_STORE.get(reKey)||'{}');
         const k=deckId+'/'+dayStart+'_'+homeworkPerDay;
-        reAll[k]={...rec,deckId:deckId,startDay:dayStart,homework:homeworkPerDay};
-        RL_STORE.set(reKey,JSON.stringify(reAll));
+        if(!reAll[k]){ reAll[k]={...rec,deckId:deckId,startDay:dayStart,homework:homeworkPerDay}; RL_STORE.set(reKey,JSON.stringify(reAll)); }
     }catch(e){}
     render();
 }
@@ -2816,6 +2818,56 @@ function renderFlowWeek(ctx){
         }catch(e){}
         return null;
     }
+    // 주간평가(6단계) 실전 점수 조회. 없으면 null.
+    function _getWeeklyExamScore(key){
+        try{
+            if(key==='vocab'){
+                const raw=RL_STORE.get(_vcKey('rl_vc_weeklyexam_exam'));
+                if(!raw) return null;
+                const all=JSON.parse(raw);
+                let best=null;
+                Object.values(all).forEach(v=>{ const p=(v&&(typeof v.bestScore==='number'?v.bestScore:(typeof v.score==='number'?v.score:null))); if(typeof p==='number') best=Math.max(best===null?-1:best,p); });
+                return best;
+            }
+            if(key==='grammar'){
+                const gr=getGrammarRecords();
+                const wk=gr.weeklyExam||{};
+                const wKeys=Object.keys(wk);
+                if(wKeys.length===0) return null;
+                let best=null;
+                wKeys.forEach(w=>{ const at=wk[w]&&wk[w].attempts; if(Array.isArray(at)) at.forEach(a=>{ const p=a.pct??a.score; if(typeof p==='number') best=Math.max(best===null?-1:best,p); }); });
+                return best;
+            }
+            if(key==='reading'){
+                // 리딩 주간 실전: weekly_<uid>_<book>_<weekId>.score
+                const _sd=getStudentData()||{};
+                const _book=_sd.textbooks?.reading||'';
+                const _uid=getUser().id;
+                const _prefix='weekly_'+_uid+'_'+_book+'_';
+                let best=null;
+                const scan=(k,getter)=>{ if(k && (k.indexOf(_prefix)!==-1||k.indexOf('rl_'+_prefix)!==-1)){ try{ const v=JSON.parse(getter(k)); if(v&&typeof v.score==='number'&&v.examDone) best=Math.max(best===null?-1:best,v.score);}catch(e){} } };
+                for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); scan(k,kk=>localStorage.getItem(kk)); }
+                if(window.RLStorage&&RLStorage.isReady()){ RLStorage.keys().forEach(k=>scan(k,kk=>RL_STORE.get(kk))); }
+                return best;
+            }
+        }catch(e){}
+        return null;
+    }
+    // 완료 카드용: hw.label에서 '진도'만 추출 ("교재 · Unit 1 · 실전" → "Unit 1")
+    function _progressOf(hw){
+        try{
+            if(!hw||!hw.label) return '';
+            const parts=hw.label.split('·').map(s=>s.trim());
+            // 보통 [교재명, 진도, 단계] 또는 [교재명, 🟠 주간평가 단계]
+            if(parts.length>=3) return parts[1];               // 진도(Unit/Ch/DAY)
+            if(parts.length===2){
+                // "교재 · 🟠 주간평가 훈련/실전" → 주간평가는 진도 대신 빈값(날짜로 충분)
+                if(parts[1].indexOf('주간평가')!==-1) return '';
+                return parts[1];
+            }
+            return '';
+        }catch(e){ return ''; }
+    }
     function classify(hw){
         if(!hw) return 'done';
         if(hw.isWeekly) return 'weekly'; // 주간평가는 weeklyStage(phase)로 단계 처리
@@ -2873,22 +2925,30 @@ function renderFlowWeek(ctx){
         // mode: 'self-active' | 'self-done' | 'exam-locked' | 'exam-active' | 'done'
         //   주간: 'wtrain'(훈련 진행) | 'wtrain-done'(훈련 통과) | 'wexam'(실전 진행) | 'wexam-done'(실전 완료)
         const hw=subj.hw;
+        const _nm=subj.name.replace(/^[^ ]+ /,'');     // 과목명 (이모지 제거)
+        const _prog=_progressOf(hw);                    // 진도 (Unit/Ch/DAY) — 없으면 ''
+        const _dateStr=(hw&&hw.sub)?hw.sub:'';          // "6/1 (월요일)"
         let title, sub;
         if(mode==='self-done'){
-            // 셀프 끝난 과목 (실전은 아직 안 봄): 과목명 + 숙제 완료
-            title = `${subj.name.replace(/^[^ ]+ /,'')} 숙제 완료`;
-            sub = '실전평가는 학원에서 진행해요';
+            // 셀프 끝난 과목 (실전은 아직 안 봄): 과목명 + 진도 + 날짜 (점수 없음)
+            title = _prog ? `${_nm} 숙제 완료 · ${_prog}` : `${_nm} 숙제 완료`;
+            sub = _dateStr || '실전평가는 학원에서 진행해요';
         } else if(mode==='done'){
-            // 실전평가까지 완료: 점수 표시
-            title = `${subj.name.replace(/^[^ ]+ /,'')} 실전 완료`;
+            // 실전평가까지 완료: 진도 + 날짜 + 점수
+            title = _prog ? `${_nm} 실전 완료 · ${_prog}` : `${_nm} 실전 완료`;
             const _sc = _getExamScore(subj.key);
-            sub = (_sc!==null) ? `실전평가 ${_sc}점 · 완료` : '실전평가까지 완료했어요';
+            const _scTxt = (_sc!==null) ? `${_sc}점` : '완료';
+            sub = _dateStr ? `${_dateStr} · 실전평가 ${_scTxt}` : `실전평가 ${_scTxt}`;
         } else if(mode==='wtrain-done'){
-            title = `${subj.name.replace(/^[^ ]+ /,'')} 주간 훈련 완료`;
-            sub = '주간평가 훈련을 통과했어요';
+            // 주간 훈련 완료 (5단계): 점수 없음, 날짜만
+            title = `${_nm} 주간 훈련 완료`;
+            sub = _dateStr ? `${_dateStr} · 주간평가 훈련 통과` : '주간평가 훈련을 통과했어요';
         } else if(mode==='wexam-done'){
-            title = `${subj.name.replace(/^[^ ]+ /,'')} 주간 실전 완료`;
-            sub = '주간평가 실전까지 마쳤어요';
+            // 주간 실전 완료 (6단계): 점수 표시
+            title = `${_nm} 주간 실전 완료`;
+            const _wsc = _getWeeklyExamScore(subj.key);
+            const _wscTxt = (_wsc!==null) ? `${_wsc}점` : '완료';
+            sub = _dateStr ? `${_dateStr} · 주간 실전 ${_wscTxt}` : `주간 실전 ${_wscTxt}`;
         } else {
             // self-active / wtrain / wexam: hw의 label/sub 사용
             title = hw ? hw.label : `${subj.name} 완료`;
@@ -2919,26 +2979,38 @@ function renderFlowWeek(ctx){
         const bg = locked?'#F3F4F6':'#fff';
         const btnBg = locked?'#9CA3AF':(faded?'#10B981':subj.color);
         const click = (onclick&&!locked)?`onclick="${onclick}"`:'';
-        // 어드민 미리보기 전용: 시작 옆 "다음" 버튼 (이 과목만 현재 단계 0점완료 후 다음 단계)
+        // 어드민 미리보기 전용 버튼 (과목별). 규칙(1~6단계 통일):
+        //   진행 중 카드 = "다음"만 (이전 없음) / 완료 카드 = "← 이전"만
+        //   ※ 과목별 버튼은 '미리보기 전용' — 학생 데이터 미반영. (학생 반영은 하단 구간점프)
         let adminNextBtn='';
         let adminPrevBtn='';
         try{
             if(typeof isPreview==='function' && isPreview() && hw){
+                // ── 진행 중 → "다음" (그 과목 현재 단계만 완료) ──
                 let _fn='';
                 if(mode==='self-active' && hw.selfDoneFn) _fn=hw.selfDoneFn;
                 else if(mode==='exam-active' && hw.examDoneFn) _fn=hw.examDoneFn;
-                // ⚠️ self-done(셀프 완료)에는 "다음" 없음 — 셀프 단계에서 실전을 미리 완료시키면 안 됨.
-                //    실전은 NEXT로 실전 단계 진입 후 처리. (exam-locked도 마찬가지로 제외)
+                else if(mode==='wtrain' && hw.weeklyDoneFn) _fn=String(hw.weeklyDoneFn).replace('__MODE__','train');
+                else if(mode==='wexam'  && hw.weeklyDoneFn) _fn=String(hw.weeklyDoneFn).replace('__MODE__','exam');
                 if(_fn){
                     const _fnEsc=_fn.replace(/'/g,"\\'");
-                    adminNextBtn=`<button onclick="event.stopPropagation();_runFlowFn('${_fnEsc}')" style="font-size:11px;padding:8px 12px;background:#F59E0B;border:none;color:#fff;border-radius:8px;cursor:pointer;margin-left:6px" title="이 과목 현재 단계 완료 후 다음 단계로">다음</button>`;
+                    adminNextBtn=`<button onclick="event.stopPropagation();_runFlowFn('${_fnEsc}')" style="font-size:11px;padding:8px 12px;background:#F59E0B;border:none;color:#fff;border-radius:8px;cursor:pointer;margin-left:6px" title="이 과목 현재 단계 완료 후 다음으로">다음</button>`;
                 }
-                // ← 이전: 현재 단계 기록 삭제하고 한 칸 뒤로 (self-active는 더 뒤가 없으므로 제외)
+                // ── 완료 → "← 이전" (그 과목 현재 단계 기록 삭제) ──
+                //   일반 단계: self-done(셀프 기록 삭제) / done(실전 기록 삭제)
                 let _prevKind='';
-                if(mode==='exam-active'||mode==='exam-locked') _prevKind='exam';   // 실전 기록 삭제 → 셀프 완료로
-                else if(mode==='self-done') _prevKind='self';                       // 셀프 기록 삭제 → 셀프 진행으로
+                if(mode==='self-done') _prevKind='self';   // 셀프 기록 삭제 → 셀프 진행
+                else if(mode==='done') _prevKind='exam';   // 실전 기록 삭제 → 실전 진행 (같은 단계 유지)
                 if(_prevKind){
-                    adminPrevBtn=`<button onclick="event.stopPropagation();_adminPrevStep('${subj.key}','${_prevKind}')" style="font-size:11px;padding:8px 12px;background:#6B7280;border:none;color:#fff;border-radius:8px;cursor:pointer;margin-left:6px" title="이 과목 현재 단계 기록 삭제 후 이전 단계로">← 이전</button>`;
+                    adminPrevBtn=`<button onclick="event.stopPropagation();_adminPrevStep('${subj.key}','${_prevKind}')" style="font-size:11px;padding:8px 12px;background:#6B7280;border:none;color:#fff;border-radius:8px;cursor:pointer;margin-left:6px" title="이 과목 현재 단계 기록 삭제">← 이전</button>`;
+                }
+                //   주간 단계 완료: wtrain-done / wexam-done
+                let _wPrevKind='';
+                if(mode==='wexam-done') _wPrevKind='wexam';        // 주간 실전 기록 삭제 → 실전 진행
+                else if(mode==='wtrain-done') _wPrevKind='wtrain'; // 주간 훈련 기록 삭제 → 훈련 진행
+                if(_wPrevKind && hw.weeklyDoneFn){
+                    const _dfEsc=String(hw.weeklyDoneFn).replace(/'/g,"\\'");
+                    adminPrevBtn=`<button onclick="event.stopPropagation();_adminPrevWeekly('${subj.key}','${_wPrevKind}','${_dfEsc}')" style="font-size:11px;padding:8px 12px;background:#6B7280;border:none;color:#fff;border-radius:8px;cursor:pointer;margin-left:6px" title="이 과목 주간단계 기록 삭제">← 이전</button>`;
                 }
             }
         }catch(e){}
@@ -3054,13 +3126,13 @@ function wrapFlow(inner){
             else phaseLabel = ph==='exam' ? '실전평가 단계' : '셀프체크 단계';
             adminPanel=`
             <div style="margin-top:28px;padding:18px;border:2px dashed #F59E0B;border-radius:14px;background:#FFFBEB">
-                <div style="font-size:13px;font-weight:800;color:#92400E;text-align:center;margin-bottom:4px">🛠 어드민 단계 이동 (미리보기 전용)</div>
-                <div style="font-size:12px;color:#B45309;text-align:center;margin-bottom:14px">현재: <b>${phaseLabel}</b> · 다음 단계로 넘기면 지금 단계는 <b>0점 처리</b>됩니다</div>
+                <div style="font-size:13px;font-weight:800;color:#92400E;text-align:center;margin-bottom:4px">🛠 구간 점프 (어드민 전용 · 학생 계정 반영)</div>
+                <div style="font-size:12px;color:#B45309;text-align:center;margin-bottom:14px">현재: <b>${phaseLabel}</b><br>다음 = 안 한 과목만 0점 처리 후 다음 단계 · 이전 = 현재 단계 리셋 후 되돌리기</div>
                 <div style="display:flex;gap:10px;justify-content:center">
                     <button onclick="adminFlowPrevStep()" style="flex:1;max-width:180px;background:#6B7280;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer">← 이전 단계</button>
                     <button onclick="adminFlowNextStep()" style="flex:1;max-width:260px;background:#F59E0B;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer">다음 단계 →</button>
                 </div>
-                <div style="font-size:11px;color:#B45309;text-align:center;margin-top:8px">이전 단계: 현재 단계 기록을 삭제하고 한 단계 뒤로</div>
+                <div style="font-size:11px;color:#B45309;text-align:center;margin-top:8px">학습 내용 편집은 불가 · 구간 이동만 가능 (학생 어느 기기에서나 동기화)</div>
             </div>`;
         }
     }catch(e){}
@@ -3079,11 +3151,14 @@ function adminFlowNextStep(){
     const _fs=getFlowState()||{};
     const ph=_fs.phase||'selfcheck';
     const _isWeekly = subs.some(s=>s.isWeekly);
+    if(!confirm('구간 점프 (다음 단계)\n\n아직 안 한 과목은 0점 처리되고, 이미 한 과목의 점수는 그대로 유지됩니다.\n이 변경은 학생 계정에 반영됩니다.\n\n계속할까요?')) return;
+    // 🟠 구간 점프는 학생 계정(Firebase)에 반영 — 미리보기여도 실제 단어 키 사용
+    _forceRealVcKey = true;
     try{
         if(_isWeekly){
             // 주간평가 단계: weeklyStage(train/exam)에 따라 처리
             const stage = _fs.weeklyStage==='exam' ? 'exam' : 'train';
-            // 현재 단계만 완료 처리 (5단계=훈련만 / 6단계=실전). __MODE__ 치환.
+            // 현재 단계만 완료 처리 (5단계=훈련만 / 6단계=실전). 이미 한 과목은 보존(0점 덮어쓰기 안 함).
             subs.forEach(s=>{ if(s.isWeekly && s.weeklyDoneFn){ try{ _runFlowFn(String(s.weeklyDoneFn).replace('__MODE__',stage)); }catch(e){console.warn('주간완료 실패',s.key,e);} } });
             if(stage==='train'){
                 setTimeout(()=>{ try{ flowWeeklyToExam(); }catch(e){} }, 60);   // 5→6
@@ -3091,14 +3166,13 @@ function adminFlowNextStep(){
                 setTimeout(()=>{ try{ flowWeeklyNextWeek(); }catch(e){} }, 60);  // 6→다음주
             }
         } else if(ph==='selfcheck'){
-            // 셀프 안 끝난 과목 전부 셀프 완료(0점) 처리 → 그 다음 flowCompleteHomework(실전 단계로)
+            // 셀프 안 끝난 과목만 0점 완료 (이미 한 과목은 selfDoneFn이 보존). → flowCompleteHomework(실전 단계로)
             subs.forEach(s=>{
                 if(s.st==='self' && s.selfDoneFn){ try{ _runFlowFn(s.selfDoneFn); }catch(e){console.warn('셀프완료 실패',s.key,e);} }
             });
-            // 카드 함수들이 render를 호출하므로, 다음 틱에 phase 전환
             setTimeout(()=>{ try{ flowCompleteHomework(); }catch(e){} }, 60);
         } else if(ph==='exam'){
-            // 실전 안 끝난 과목 전부 실전 완료(0점) → flowGoNextDay(다음 학습일 셀프로)
+            // 실전 안 끝난 과목만 0점 완료 → flowGoNextDay(다음 학습일 셀프로)
             subs.forEach(s=>{
                 if(s.st==='exam' && s.examDoneFn){ try{ _runFlowFn(s.examDoneFn); }catch(e){console.warn('실전완료 실패',s.key,e);} }
                 else if(s.st==='self' && s.selfDoneFn){ try{ _runFlowFn(s.selfDoneFn); }catch(e){} }
@@ -3108,6 +3182,7 @@ function adminFlowNextStep(){
             setTimeout(()=>{ try{ advanceWeek(); }catch(e){} }, 60);
         }
     }catch(e){ alert('단계 이동 중 오류: '+e.message); }
+    finally{ setTimeout(()=>{ _forceRealVcKey=false; }, 200); }
 }
 
 function adminFlowPrevStep(){
@@ -3116,17 +3191,18 @@ function adminFlowPrevStep(){
     const ph=_fs.phase||'selfcheck';
     const subs=window._flowSubjects||[];
     const _isWeekly = subs.some(s=>s.isWeekly) || !!_fs.weeklyStage;
-    if(!confirm('이전 단계로 되돌립니다.\n현재 단계의 학습 기록(점수)이 삭제됩니다. 계속할까요?')) return;
+    if(!confirm('구간 점프 (← 이전 단계)\n\n현재 단계의 세 과목 기록이 전부 삭제되어 처음부터 다시 학습하게 됩니다.\n이 변경은 학생 계정에 반영됩니다.\n\n계속할까요?')) return;
+    // 🟠 구간 점프는 학생 계정(Firebase)에 반영 — 미리보기여도 실제 단어 키 사용
+    _forceRealVcKey = true;
     try{
         if(_isWeekly){
             const stage = _fs.weeklyStage==='exam' ? 'exam' : 'train';
             if(stage==='exam'){
-                // 6단계(실전) → 5단계(훈련): 세 과목 주간 '실전' 기록만 삭제, weeklyStage=train
+                // 6단계(실전) → 5단계(훈련): 세 과목 주간 '실전' 기록 삭제, weeklyStage=train
                 subs.forEach(s=>{ if(s.isWeekly) _clearWeeklyStepRecords(s.key,'wexam',s.weeklyDoneFn); });
                 const st=getFlowState()||{}; st.weeklyStage='train'; setFlowState(st);
             } else {
-                // 5단계(훈련) → 그 주 셀프체크 이후(실전 단계)로: 주간 훈련 기록 삭제 + weeklyStage 해제
-                //   (이전 주로 되돌리는 대신, 주간평가 진입 직전인 그 주 실전 단계로 안전 복귀)
+                // 5단계(훈련) → 그 주 실전 단계로: 주간 훈련 기록 삭제 + weeklyStage 해제
                 subs.forEach(s=>{ if(s.isWeekly) _clearWeeklyStepRecords(s.key,'wtrain',s.weeklyDoneFn); });
                 const st=getFlowState()||{}; delete st.weeklyStage; st.phase='exam'; setFlowState(st);
             }
@@ -3134,18 +3210,17 @@ function adminFlowPrevStep(){
             return;
         }
         if(ph==='exam'){
-            // 실전 단계 → 셀프 단계로: 현재 과목들의 '실전 기록'만 삭제하고 phase=selfcheck
+            // 실전 단계 → 셀프 단계로: 세 과목 '실전 기록' 삭제하고 phase=selfcheck
             subs.forEach(s=>_clearStepRecords(s.key,'exam'));
             setFlowState({phase:'selfcheck'});
         } else {
-            // 셀프 단계 → 이전 학습일의 실전 단계로: 현재 과목 셀프 기록 삭제 +
-            //   진도를 한 칸 되돌리려면 직전 학습일 실전 기록도 살아있어야 하므로,
-            //   여기서는 현재 셀프 기록만 지우고 phase=exam(직전 실전)으로 되돌린다.
+            // 셀프 단계 → 직전 실전 단계로: 현재 셀프 기록 삭제 + phase=exam
             subs.forEach(s=>_clearStepRecords(s.key,'self'));
             setFlowState({phase:'exam'});
         }
         render();
     }catch(e){ alert('되돌리기 중 오류: '+e.message); }
+    finally{ setTimeout(()=>{ _forceRealVcKey=false; }, 200); }
 }
 
 // 특정 과목의 주간평가 현재 단계 기록 삭제 (kind: 'wexam' 실전 | 'wtrain' 훈련)
@@ -3210,6 +3285,15 @@ function _adminPrevStep(subjectKey, kind){
         render();
     }catch(e){ console.warn('이전 단계 실패',subjectKey,kind,e); }
 }
+// 🟠 어드민 미리보기 전용: 과목별 주간평가 "이전" — 그 과목 주간 단계 기록만 삭제
+//   kind: 'wexam'(주간 실전 기록 삭제) | 'wtrain'(주간 훈련 기록 삭제)
+function _adminPrevWeekly(subjectKey, kind, doneFnStr){
+    if(typeof isPreview!=='function' || !isPreview()) return;
+    try{
+        _clearWeeklyStepRecords(subjectKey, kind, doneFnStr);
+        render();
+    }catch(e){ console.warn('주간 이전 단계 실패',subjectKey,kind,e); }
+}
 
 // 특정 과목의 현재 단계 기록 삭제 (kind: 'exam' | 'self')
 function _clearStepRecords(subjectKey, kind){
@@ -3224,8 +3308,29 @@ function _clearStepRecords(subjectKey, kind){
             // 문법: rl_gr_<uid>_<lvl>_exam_<n> / _sc_<n> 중 가장 큰 번호 1개 삭제
             _clearLatestGrammar(uid, kind);
         } else if(subjectKey==='vocab'){
-            _clearByPrefix('rl_vc_'+(kind==='exam'?'realexam':'selfcheck')+'_'+uid, false);
-            _clearByPrefix('rl_vc_'+(kind==='exam'?'realexam':'selfcheck'), false); // 접미형 보조
+            // 🐛 수정: 기존엔 rl_vc_..._<uid> 키 자체를 통째로 지우려 했으나
+            //   (1) 미리보기에선 키가 rl_pv_<pid>_vc_... 라 접두사 불일치 → 아무것도 안 지워짐(단어 이전 먹통의 원인)
+            //   (2) 이 키는 {deckId/day_hpd: rec} dict라 통째 삭제 시 전체 단어기록이 날아감.
+            //   → _vcKey(미리보기/학생 모두 올바른 키)로 열어, '가장 최근(가장 큰 dayStart) 항목 1개'만 dict에서 제거.
+            try{
+                const base = (kind==='exam') ? 'rl_vc_realexam' : 'rl_vc_selfcheck';
+                const key = _vcKey(base);
+                const raw = RL_STORE.get(key);
+                if(raw){
+                    const all = JSON.parse(raw);
+                    const entries = Object.keys(all);
+                    if(entries.length>0){
+                        // 키 형식: '<deckId>/<dayStart>_<hpd>'. dayStart 최대값 = 가장 최근 학습.
+                        let target=null, maxDay=-1;
+                        entries.forEach(k=>{
+                            const m=String(k).match(/\/(\d+)_/);
+                            const d=m?parseInt(m[1]):0;
+                            if(d>=maxDay){ maxDay=d; target=k; }
+                        });
+                        if(target){ delete all[target]; RL_STORE.set(key, JSON.stringify(all)); console.log('[어드민 되돌리기] 단어 삭제:',key,target); }
+                    }
+                }
+            }catch(e){ console.warn('단어 기록 삭제 실패',e); }
         }
     }catch(e){ console.warn('기록 삭제 실패',subjectKey,kind,e); }
 }
