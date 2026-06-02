@@ -1108,13 +1108,35 @@ function getGrammarScoreInRange(prevDateISO,curDateISO,records){
 }
 // 점수 등급 (셀프체크 표시용)
 function gradeFromPct(pct){return pct>=90?'A':pct>=80?'B':pct>=70?'C':'';}
+// 🟢 통과(완료) 판정 통일 — 재시험 프리패스 규칙.
+//   재시험 1회까지(=총 2회 시도) 봤으면 점수와 무관하게 '완료'로 간주한다.
+//   셀프체크(1·3·5단계)·실전(2·4단계) 모두 동일하게 적용.
+//   rec 형태: {passed, attempts:[...] 또는 attempts:숫자, bestScore, adminCompleted, history}
+function _recIsPassed(rec){
+    if(!rec) return false;
+    if(rec.passed===true) return true;                 // 80점 이상 통과
+    if(rec.adminCompleted===true) return true;         // 어드민 완료 처리
+    // attempts가 배열이면 length, 숫자면 그대로
+    const att = rec.attempts;
+    const n = Array.isArray(att) ? att.length : (typeof att==='number' ? att : 0);
+    if(n>=2) return true;                              // 재시험 1회 포함 2회 시도 = 프리패스
+    if(Array.isArray(att) && att.some(x=>x&&x.passed)) return true; // 시도 중 통과한 적
+    return false;
+}
+// 시도한 적이 있는지 (한 번이라도 응시)
+function _recIsTried(rec){
+    if(!rec) return false;
+    const att = rec.attempts;
+    const n = Array.isArray(att) ? att.length : (typeof att==='number' ? att : 0);
+    return n>0;
+}
 // 학생이 특정 Unit의 4 Point를 모두 완료했고 셀프체크는 아직 미통과인지 (실전 진입 가능 상태)
 function canEnterSelfCheck(unit,records){
     records=records||getGrammarRecords();
     const unitPts=[1,2,3,4].map(o=>(unit-1)*4+o);
     const completed=records.progress?.completedPoints||[];
     const allDone=unitPts.every(p=>completed.includes(p));
-    const passed=records.selfChecks?.[unit]?.passed===true;
+    const passed=_recIsPassed(records.selfChecks?.[unit]);  // 재시험 프리패스 반영
     return allDone&&!passed;
 }
 
@@ -1908,17 +1930,10 @@ function renderSchedule(s){
         const curPt=parseInt(getCurrentGrammarPoint()||_startGrammarPt||'1');
         // 나모그: P=Chapter, 문마중: 4P=1Unit
         let curUnit=_isNamogRow?curPt:Math.ceil(curPt/4);
-        // 실전 '완료'(=진도 전진 자격) 판정: 메모 규칙 pct>=80 || attempts>=2 (점수무관 강제통과) || adminCompleted
-        //   1회 시도 후 미통과(재시험 전)인 실전은 아직 완료가 아니므로 전진시키지 않는다.
-        function _gExamCompleted(ex){
-            if(!ex) return false;
-            const att = ex.attempts || [];
-            if(att.length>=2) return true;            // 2회 시도 = 강제 통과
-            if(ex.adminCompleted) return true;
-            // 1회 시도라도 80점 이상이면 통과
-            const best = Math.max(0, ...att.map(a=>(a&&typeof a.pct==='number')?a.pct:(a&&typeof a.score==='number'?a.score:0)));
-            return best>=80;
-        }
+        // 실전 '완료'(=진도 전진 자격) 판정: 재시험 프리패스 규칙 통일(_recIsPassed).
+        //   80점 이상 OR 재시험 1회 포함 2회 시도 OR 어드민완료 = 완료.
+        //   1회 시도 후 미통과(재시험 전)인 실전만 '미완료'로 둬서 전진 안 시킴.
+        const _gExamCompleted = _recIsPassed;
         const examUnits=Object.keys(_gRecords.exams||{})
             .filter(u=>_gExamCompleted(_gRecords.exams[u]))   // ★ 완료된 실전만
             .map(u=>parseInt(u)).filter(u=>!isNaN(u));
@@ -1959,13 +1974,13 @@ function renderSchedule(s){
             if(d&&d.toUnit&&d.toUnit+1>curUnit)curUnit=d.toUnit+1;
         });
         // 🔧 실전평가 미완료 Unit이 있으면 그 Unit으로 되돌리기
-        // (셀프체크 통과했지만 실전 미진행 → 아직 그 Unit에 머물러야 함)
+        // (셀프체크 통과/프리패스했지만 실전 미진행 → 그 Unit의 실전이 이번 숙제 → 거기 머묾)
         for(let u=_startGrammarUnit;u<curUnit;u++){
             const scD=_gRecords.selfChecks?.[u];
             const exD=_gRecords.exams?.[u];
             const hasSc=scD?.attempts?.length>0;
             const hasEx=exD?.attempts?.length>0;
-            if(hasSc&&!hasEx){curUnit=u;break;} // 셀프체크 있지만 실전 없음 → 여기서 멈춤
+            if(hasSc&&!hasEx){curUnit=u;break;} // 셀프 기록 있고 실전 안 봄 → 여기 멈춤(그 Unit이 이번 실전 숙제)
         }
         // 학습일 매칭 시도
         console.log('[문법] curUnit최종:',curUnit,'sessGrammarUnit:',JSON.stringify(sessGrammarUnit));
@@ -2017,7 +2032,7 @@ function renderSchedule(s){
         // (이전 코드에서 실전평가 시도 시 setCurrentPoint 호출 안 됐던 경우 보정)
         let _effectiveCurrentPt=parseInt(getCurrentGrammarPoint()||sd.startGrammarPoint||getUser()?.startGrammarPoint||'1');
         {
-            const _exC=(ex)=>{ if(!ex)return false; const a=ex.attempts||[]; if(a.length>=2)return true; if(ex.adminCompleted)return true; const b=Math.max(0,...a.map(x=>(x&&typeof x.pct==='number')?x.pct:(x&&typeof x.score==='number'?x.score:0))); return b>=80; };
+            const _exC=_recIsPassed;
             const _examUnits=Object.keys(_gRecords.exams||{}).filter(u=>_exC(_gRecords.exams[u])).map(u=>parseInt(u)).filter(u=>!isNaN(u));
             if(_examUnits.length>0){
                 const _maxExamUnit=Math.max(..._examUnits);
@@ -2426,13 +2441,13 @@ function renderSchedule(s){
         } else {
             const scD=_gRecords.selfChecks?.[gUnit];
             const lastSc=(scD?.attempts?.length>0)?scD.attempts[scD.attempts.length-1]:null;
-            // 재시험 룰: 1회차 80점 미만은 '재시험', 80점 이상 OR 2회차는 '실전'
-            const _scAttemptsHW = scD?.attempts?.length || 0;
+            // 재시험 룰(프리패스): 1회차 80점 미만 = '재시험', 80점 이상 OR 2회차 응시 = '실전'(통과 간주)
+            const _scSelfPassed = _recIsPassed(scD);
             // 이 Chapter 실전평가를 봤는지 (메모7번 리딩과 동일: 실전 완료 추적)
             const _gExamD=_gRecords.exams?.[gUnit];
             const _gExamDone=!!(_gExamD && _gExamD.attempts?.length>0);
-            // 실전까지 봤으면 phase '실전' 유지(완료로 표시), 아니면 기존 규칙
-            const gPhase=_gExamDone?'실전':(!lastSc?'훈련':((lastSc.passed || _scAttemptsHW >= 2)?'실전':'재시험'));
+            // 실전까지 봤으면 phase '실전' 유지(완료로 표시), 아니면 셀프 통과/프리패스 여부로 결정
+            const gPhase=_gExamDone?'실전':(!lastSc?'훈련':(_scSelfPassed?'실전':'재시험'));
             // 나모그: gUnit=Chapter, 라벨 "Chapter", URL에도 그대로
             // 문마중: gUnit=Unit, 라벨 "Unit", URL은 (Unit-1)*4+1
             const _gHWPt=_isNamogRow?gUnit:(gUnit-1)*4+1;
@@ -2981,37 +2996,22 @@ function renderFlowWeek(ctx){
         const click = (onclick&&!locked)?`onclick="${onclick}"`:'';
         // 어드민 미리보기 전용 버튼 (과목별). 규칙(1~6단계 통일):
         //   진행 중 카드 = "다음"만 (이전 없음) / 완료 카드 = "← 이전"만
-        //   ※ 과목별 버튼은 '미리보기 전용' — 학생 데이터 미반영. (학생 반영은 하단 구간점프)
+        //   ※ onclick엔 과목 key만 넘긴다(따옴표 중첩 버그 방지). 실제 함수는 헬퍼가 _flowSubjects에서 조회.
         let adminNextBtn='';
         let adminPrevBtn='';
         try{
             if(typeof isPreview==='function' && isPreview() && hw){
+                const _btn=(label,handler,bg)=>`<button onclick="event.stopPropagation();${handler}" style="font-size:11px;padding:8px 12px;background:${bg};border:none;color:#fff;border-radius:8px;cursor:pointer;margin-left:6px">${label}</button>`;
                 // ── 진행 중 → "다음" (그 과목 현재 단계만 완료) ──
-                let _fn='';
-                if(mode==='self-active' && hw.selfDoneFn) _fn=hw.selfDoneFn;
-                else if(mode==='exam-active' && hw.examDoneFn) _fn=hw.examDoneFn;
-                else if(mode==='wtrain' && hw.weeklyDoneFn) _fn=String(hw.weeklyDoneFn).replace('__MODE__','train');
-                else if(mode==='wexam'  && hw.weeklyDoneFn) _fn=String(hw.weeklyDoneFn).replace('__MODE__','exam');
-                if(_fn){
-                    const _fnEsc=_fn.replace(/'/g,"\\'");
-                    adminNextBtn=`<button onclick="event.stopPropagation();_runFlowFn('${_fnEsc}')" style="font-size:11px;padding:8px 12px;background:#F59E0B;border:none;color:#fff;border-radius:8px;cursor:pointer;margin-left:6px" title="이 과목 현재 단계 완료 후 다음으로">다음</button>`;
-                }
+                if(mode==='self-active' && hw.selfDoneFn)      adminNextBtn=_btn('다음',`_adminNext('${subj.key}','self')`,'#F59E0B');
+                else if(mode==='exam-active' && hw.examDoneFn) adminNextBtn=_btn('다음',`_adminNext('${subj.key}','exam')`,'#F59E0B');
+                else if(mode==='wtrain' && hw.weeklyDoneFn)    adminNextBtn=_btn('다음',`_adminWeeklyNext('${subj.key}','train')`,'#F59E0B');
+                else if(mode==='wexam'  && hw.weeklyDoneFn)    adminNextBtn=_btn('다음',`_adminWeeklyNext('${subj.key}','exam')`,'#F59E0B');
                 // ── 완료 → "← 이전" (그 과목 현재 단계 기록 삭제) ──
-                //   일반 단계: self-done(셀프 기록 삭제) / done(실전 기록 삭제)
-                let _prevKind='';
-                if(mode==='self-done') _prevKind='self';   // 셀프 기록 삭제 → 셀프 진행
-                else if(mode==='done') _prevKind='exam';   // 실전 기록 삭제 → 실전 진행 (같은 단계 유지)
-                if(_prevKind){
-                    adminPrevBtn=`<button onclick="event.stopPropagation();_adminPrevStep('${subj.key}','${_prevKind}')" style="font-size:11px;padding:8px 12px;background:#6B7280;border:none;color:#fff;border-radius:8px;cursor:pointer;margin-left:6px" title="이 과목 현재 단계 기록 삭제">← 이전</button>`;
-                }
-                //   주간 단계 완료: wtrain-done / wexam-done
-                let _wPrevKind='';
-                if(mode==='wexam-done') _wPrevKind='wexam';        // 주간 실전 기록 삭제 → 실전 진행
-                else if(mode==='wtrain-done') _wPrevKind='wtrain'; // 주간 훈련 기록 삭제 → 훈련 진행
-                if(_wPrevKind && hw.weeklyDoneFn){
-                    const _dfEsc=String(hw.weeklyDoneFn).replace(/'/g,"\\'");
-                    adminPrevBtn=`<button onclick="event.stopPropagation();_adminPrevWeekly('${subj.key}','${_wPrevKind}','${_dfEsc}')" style="font-size:11px;padding:8px 12px;background:#6B7280;border:none;color:#fff;border-radius:8px;cursor:pointer;margin-left:6px" title="이 과목 주간단계 기록 삭제">← 이전</button>`;
-                }
+                if(mode==='self-done')        adminPrevBtn=_btn('← 이전',`_adminPrevStep('${subj.key}','self')`,'#6B7280'); // 셀프 기록 삭제
+                else if(mode==='done')        adminPrevBtn=_btn('← 이전',`_adminPrevStep('${subj.key}','exam')`,'#6B7280'); // 실전 기록 삭제(같은 단계 유지)
+                else if(mode==='wexam-done')  adminPrevBtn=_btn('← 이전',`_adminWeeklyPrev('${subj.key}','wexam')`,'#6B7280'); // 주간 실전 기록 삭제
+                else if(mode==='wtrain-done') adminPrevBtn=_btn('← 이전',`_adminWeeklyPrev('${subj.key}','wtrain')`,'#6B7280'); // 주간 훈련 기록 삭제
             }
         }catch(e){}
         return `<div class="next-homework-card" style="border-left:4px solid ${subj.color};margin-bottom:8px;padding:12px 16px;cursor:${cursor};opacity:${opacity};background:${bg}" ${click}>
@@ -3293,6 +3293,45 @@ function _adminPrevWeekly(subjectKey, kind, doneFnStr){
         _clearWeeklyStepRecords(subjectKey, kind, doneFnStr);
         render();
     }catch(e){ console.warn('주간 이전 단계 실패',subjectKey,kind,e); }
+}
+// 🟠 따옴표 안전 버전: onclick에는 과목 key만 넘기고, weeklyDoneFn은 _flowSubjects에서 조회.
+//   (기존엔 onclick 문자열 안에 함수+따옴표를 중첩해 넣다가 깨져서 버튼이 안 먹던 버그 수정)
+function _wkDoneFnOf(subjectKey){
+    try{
+        const subs=window._flowSubjects||[];
+        const s=subs.find(x=>x.key===subjectKey);
+        return (s&&s.weeklyDoneFn)?s.weeklyDoneFn:'';
+    }catch(e){ return ''; }
+}
+// 과목별 주간 "다음": 그 과목 현재 주간단계만 완료 (mode='train'|'exam')
+function _adminWeeklyNext(subjectKey, mode){
+    if(typeof isPreview!=='function' || !isPreview()) return;
+    try{
+        const df=_wkDoneFnOf(subjectKey);
+        if(!df){ console.warn('주간 다음: weeklyDoneFn 없음',subjectKey); return; }
+        _runFlowFn(String(df).replace('__MODE__', mode==='exam'?'exam':'train'));
+    }catch(e){ console.warn('주간 다음 실패',subjectKey,mode,e); }
+}
+// 과목별 주간 "이전": 그 과목 주간단계 기록 삭제 (kind='wtrain'|'wexam')
+function _adminWeeklyPrev(subjectKey, kind){
+    if(typeof isPreview!=='function' || !isPreview()) return;
+    try{
+        const df=_wkDoneFnOf(subjectKey);
+        _clearWeeklyStepRecords(subjectKey, kind, df);
+        render();
+    }catch(e){ console.warn('주간 이전 실패',subjectKey,kind,e); }
+}
+// 🟠 따옴표 안전: 일반 단계 과목별 "다음" — _flowSubjects에서 self/exam DoneFn 조회해 실행.
+//   (onclick에 함수문자열+따옴표를 박던 기존 방식이 깨져서 리딩/단어 버튼이 안 먹던 버그 수정)
+function _adminNext(subjectKey, which){
+    if(typeof isPreview!=='function' || !isPreview()) return;
+    try{
+        const subs=window._flowSubjects||[];
+        const s=subs.find(x=>x.key===subjectKey);
+        if(!s) return;
+        const fn = which==='exam' ? s.examDoneFn : s.selfDoneFn;
+        if(fn) _runFlowFn(fn);
+    }catch(e){ console.warn('다음 실패',subjectKey,which,e); }
 }
 
 // 특정 과목의 현재 단계 기록 삭제 (kind: 'exam' | 'self')
