@@ -3297,8 +3297,9 @@ function _clearWeeklyStepRecords(subjectKey, kind, doneFnStr){
             const prefix=_grammarKeyPrefix();
             const exKey=prefix+'wex_'+weekIdx;       // 주간 실전
             const scKey=prefix+'wsc_'+weekIdx;       // 주간 셀프체크(훈련)
-            const killExam=()=>{ try{ localStorage.removeItem(exKey); }catch(e){} try{ if(window.RLStorage&&RLStorage.isReady())RLStorage.removeItem(exKey);}catch(e){} };
-            const killTrain=()=>{ try{ localStorage.removeItem(scKey); }catch(e){} try{ if(window.RLStorage&&RLStorage.isReady())RLStorage.removeItem(scKey);}catch(e){} };
+            // 🔑 RL_STORE.remove로 삭제 → 서버 push 큐 경유(Firebase 반영). localStorage도 직접 정리.
+            const killExam=()=>{ try{ RL_STORE.remove(exKey); }catch(e){} try{ localStorage.removeItem(exKey); }catch(e){} };
+            const killTrain=()=>{ try{ RL_STORE.remove(scKey); }catch(e){} try{ localStorage.removeItem(scKey); }catch(e){} };
             if(kind==='wexam'){ killExam(); }
             else { killExam(); killTrain(); }
         } else if(subjectKey==='vocab'){
@@ -3424,12 +3425,26 @@ function _clearStepRecords(subjectKey, kind){
 function _clearByPrefix(prefixNoRl, hasRlPrefix){
     // hasRlPrefix=true면 키가 'rl_'+prefixNoRl 로 저장됨(LS.s 계열), false면 그대로
     const full = hasRlPrefix ? ('rl_'+prefixNoRl) : prefixNoRl;
-    const kill=[];
-    for(let i=localStorage.length-1;i>=0;i--){ const k=localStorage.key(i); if(k&&k.indexOf(full)===0){ kill.push(k); localStorage.removeItem(k); } }
+    // 🔑 삭제 대상 키를 먼저 '모으기'만 한다(중복 제거).
+    //    - localStorage / RLStorage 양쪽을 스캔해 후보 키를 수집
+    //    - 실제 삭제는 RL_STORE.remove로 일괄 처리 → 서버 push 큐를 타서 Firebase까지 삭제 반영
+    //    (기존 버그: localStorage.removeItem / RLStorage.removeItem 을 직접 호출해
+    //     서버 push 큐를 안 거쳤음 → 서버엔 기록이 남아 다음 동기화 때 되살아남
+    //     = "구간 점프 되돌리기 해도 다시 숙제완료로 뜨는" 현상의 근본 원인.)
+    const killSet = new Set();
+    for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf(full)===0) killSet.add(k); }
     if(window.RLStorage&&RLStorage.isReady()){
-        try{ RLStorage.keys().forEach(k=>{ if(k.indexOf(full)===0){ kill.push(k); RLStorage.removeItem(k);} }); if(RLStorage.flush)RLStorage.flush(); }catch(e){}
+        try{ RLStorage.keys().forEach(k=>{ if(k&&k.indexOf(full)===0) killSet.add(k); }); }catch(e){}
     }
-    console.log('[어드민 되돌리기] 삭제:',kill);
+    const kill=Array.from(killSet);
+    // RL_STORE.remove: RLStorage(IndexedDB) 삭제 + 서버 push 큐 등록(539~548줄 래퍼).
+    //   localStorage는 RL_STORE.remove가 안 건드리므로(스냅샷 유지 설계) 여기서 직접 정리.
+    kill.forEach(k=>{
+        try{ RL_STORE.remove(k); }catch(e){ console.warn('RL_STORE.remove 실패',k,e); }
+        try{ localStorage.removeItem(k); }catch(e){}
+    });
+    if(window.RLStorage&&RLStorage.flush){ try{ RLStorage.flush(); }catch(e){} }
+    console.log('[어드민 되돌리기] 삭제(서버 동기화 포함):',kill);
 }
 
 function _clearLatestGrammar(uid, kind){
@@ -3442,9 +3457,10 @@ function _clearLatestGrammar(uid, kind){
     if(cand.length===0){ console.log('[어드민 되돌리기] 문법 삭제 대상 없음'); return; }
     const maxN=Math.max(...cand.map(c=>c.n));
     cand.filter(c=>c.n===maxN).forEach(c=>{
+        // 🔑 RL_STORE.remove로 삭제 → 서버 push 큐 경유(Firebase 반영). localStorage는 직접 정리.
+        try{ RL_STORE.remove(c.k); }catch(e){ console.warn('RL_STORE.remove 실패',c.k,e); }
         try{ localStorage.removeItem(c.k); }catch(e){}
-        if(window.RLStorage&&RLStorage.isReady()){ try{ RLStorage.removeItem(c.k); }catch(e){} }
-        console.log('[어드민 되돌리기] 문법 삭제:',c.k);
+        console.log('[어드민 되돌리기] 문법 삭제(서버 동기화 포함):',c.k);
     });
     if(window.RLStorage&&RLStorage.flush){ try{ RLStorage.flush(); }catch(e){} }
 }
