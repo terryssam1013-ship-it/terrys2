@@ -2725,9 +2725,15 @@ function renderSchedule(s){
               if(_fromU!==null) _gWk={weekIdx:_wIdxGuess,fromUnit:_fromU,toUnit:_toU};
             }
             if(_gWk){
-              const _gWkIdx=_gWk.weekIdx||1;
               const _gFrom=_gWk.fromUnit||parseInt(s.startGrammarPoint||'1');
               const _gTo=_gWk.toUnit||_gFrom;
+              // 🔑 주간평가 풀(week)은 '교재 절대 기준'으로 묶여 있다:
+              //    week1=Ch1~2, week2=Ch3~4, week3=Ch5~6 ...
+              //    학생이 Ch3부터 시작해도 그 주간평가는 풀의 week2(Ch3~4)를 봐야 한다.
+              //    예전엔 '학생 일정상 N번째 주'(_gWk.weekIdx)를 그대로 넘겨서,
+              //    Ch3 시작 학생이 week1(Ch1~2)을 보는 버그가 있었다.
+              //    → 시작 챕터(_gFrom)로 풀 week번호를 직접 계산한다.
+              const _gWkIdx=Math.floor((_gFrom-1)/2)+1;
               const _gBase=getGrammarUrl(_gFrom);
               const _gWscUrl=`${_gBase}&wsc=${_gWkIdx}&from=${_gFrom}&to=${_gTo}`;
               const _gWexUrl=`${_gBase}&wex=${_gWkIdx}&from=${_gFrom}&to=${_gTo}`;
@@ -2739,7 +2745,8 @@ function renderSchedule(s){
               const _gWexDone=_gWexAttempts.length>0;
               const _gGrammarName=s.textbooks?.grammar||'문법';
               const _gPhaseLabel=_gWscPassed?'실전':'훈련';
-              grammarHW={label:`${_gGrammarName} · 🟠 주간평가 ${_gPhaseLabel}`,sub:_wkSub,onclick:`window.location.href='${_gWscPassed?_gWexUrl:_gWscUrl}'`,icon:'📝',phase:_gPhaseLabel,isWeekly:true,weeklyDoneFn:`flowAdminGrammarWeekly(${_gWkIdx},${_gFrom},${_gTo},'__MODE__')`,
+              const _gRangeLabel = (_gTo&&_gTo!==_gFrom) ? ` (Ch${_gFrom}~${_gTo})` : ` (Ch${_gFrom})`;
+              grammarHW={label:`${_gGrammarName} · 🟠 주간평가 ${_gPhaseLabel}${_gRangeLabel}`,sub:_wkSub,onclick:`window.location.href='${_gWscPassed?_gWexUrl:_gWscUrl}'`,icon:'📝',phase:_gPhaseLabel,isWeekly:true,weeklyDoneFn:`flowAdminGrammarWeekly(${_gWkIdx},${_gFrom},${_gTo},'__MODE__')`,
                   wTrainClick:`window.location.href='${_gWscUrl}'`, wExamClick:`window.location.href='${_gWexUrl}'`, wTrainPassed:_gWscPassed, wExamDone:_gWexDone};
             }
           }
@@ -8564,10 +8571,30 @@ window.addEventListener('DOMContentLoaded',async()=>{
     }
     
     if(isPreview()){
-        // 미리보기 모드: 학생 데이터만 있으면 진입
+        // 미리보기 모드: 학생 데이터만 있으면 진입.
+        // ⚠️ 단어학습 등에서 돌아온 직후엔 RL_STORE 읽기가 한 박자 늦을 수 있어,
+        //    한 번 못 봤다고 곧장 창을 닫으면 멀쩡한 학생도 '없음'으로 처리된다.
+        //    → 짧게 재시도하며 기다린 뒤, 그래도 없을 때만 안내한다.
         const pid=getPreviewId();
-        const users=LS.g('users')||{};
-        if(!users[pid]){alert('학생을 찾을 수 없습니다');window.close();return;}
+        let found=false;
+        for(let attempt=0; attempt<10; attempt++){      // 최대 약 1초(10×100ms) 재시도
+            const users=LS.g('users')||{};
+            if(users && users[pid]){ found=true; break; }
+            // RLStorage가 늦게 준비되는 경우 대비해 한 번 더 init 시도
+            try{ if(window.RLStorage && RLStorage.init && !RLStorage.isReady()) await RLStorage.init(); }catch(e){}
+            await new Promise(r=>setTimeout(r,100));
+        }
+        if(!found){
+            // 최후 확인: getUser 경로로도 학생을 만들 수 있으면 진입 허용
+            const u=getUser();
+            if(!(u && u.id===pid)){
+                alert('학생을 찾을 수 없습니다');
+                window.close();
+                // window.close가 막힌 경우(직접 연 탭이 아니면) 로그인으로
+                setTimeout(()=>{ try{ if(!window.closed) window.location.href='login.html'; }catch(e){} }, 300);
+                return;
+            }
+        }
         render();return;
     }
     const u=getUser();if(!u||u.role==='admin'){window.location.href='login.html';return;}
@@ -8582,6 +8609,16 @@ window.addEventListener('DOMContentLoaded',async()=>{
     // 🌙 야간 학습 차단 — 부팅 직후 + 1분마다 체크 (학습 중 차단 시간 되면 즉시 덮개)
     _checkStudyBlock();
     setInterval(_checkStudyBlock, 60000);
+});
+
+// 🔙 뒤로가기 복원(bfcache) 대응:
+//   단어학습 등에서 브라우저 뒤로가기로 이 페이지가 '캐시 복원'되면
+//   DOMContentLoaded가 다시 돌지 않아 화면이 옛 상태로 멈추거나 꼬일 수 있다.
+//   persisted=true(캐시에서 복원됨)면 새로고침해 정상 부팅을 다시 태운다.
+window.addEventListener('pageshow', (e)=>{
+    if(e.persisted){
+        try{ location.reload(); }catch(_){ }
+    }
 });
 
 // 🌙 야간 학습 차단 체크 (학생만, 미리보기 제외)
