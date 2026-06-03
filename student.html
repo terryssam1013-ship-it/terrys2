@@ -1879,7 +1879,16 @@ function renderSchedule(s){
         const sess=sessions[currentIdx];
         if(sess.isWeeklyTest){
             const weekId=fmtDateISO(sess.date);
-            nextHomework={uk:null,weekId,unitNum:null,date:sess.date,dayKor:dayKor[sess.date.getDay()],isToday:sess.date.getTime()===today.getTime(),phase:'주간평가',isWeeklyTest:true};
+            // 그 주(월~평가일) 학습일들의 Unit 범위 계산 (collectWeeklyData와 동일 기준)
+            const _wkMon=getWeekMonday(sess.date).getTime();
+            let _rFrom=null,_rTo=null;
+            for(const _as of allSessionsFull){
+                if(_as.isWeeklyTest)continue;
+                if(getWeekMonday(_as.date).getTime()!==_wkMon)continue;
+                if(_as.date>=sess.date)continue;
+                if(typeof _as.unitNum==='number'){ if(_rFrom===null||_as.unitNum<_rFrom)_rFrom=_as.unitNum; if(_rTo===null||_as.unitNum>_rTo)_rTo=_as.unitNum; }
+            }
+            nextHomework={uk:null,weekId,unitNum:null,date:sess.date,dayKor:dayKor[sess.date.getDay()],isToday:sess.date.getTime()===today.getTime(),phase:'주간평가',isWeeklyTest:true,fromUnit:_rFrom,toUnit:_rTo};
         } else {
             const uk='unit'+sess.unitNum;
             const unit=ba[uk];
@@ -2503,7 +2512,8 @@ function renderSchedule(s){
             // 주간 단계 전환용 공통 필드: 리딩 훈련 통과 = trainDone(복습완료), 실전 응시 = examDone
             const _rTrainPassed=!!(_wkRec&&_wkRec.trainDone);
             const _rExamDone=!!(_wkRec&&_wkRec.examDone);
-            readingHW={label:`${bookName} · 🟠 주간평가 ${_wkPhase}`,sub:`${fmtDate(nh.date)} (${nh.dayKor}요일)`,onclick:`openWeeklyTest('${_wkId}','${_wkPhase==='실전'?'exam':'train'}')`,icon:'📖',phase:_wkPhase,isWeekly:true,weeklyDoneFn:`flowAdminReadingWeekly('${_wkId}','__MODE__')`,
+            const _rRangeLabel=(nh.fromUnit!=null)?((nh.toUnit&&nh.toUnit!==nh.fromUnit)?` (Unit ${nh.fromUnit}~${nh.toUnit})`:` (Unit ${nh.fromUnit})`):'';
+            readingHW={label:`${bookName} · 🟠 주간평가 ${_wkPhase}${_rRangeLabel}`,sub:`${fmtDate(nh.date)} (${nh.dayKor}요일)`,onclick:`openWeeklyTest('${_wkId}','${_wkPhase==='실전'?'exam':'train'}')`,icon:'📖',phase:_wkPhase,isWeekly:true,weeklyDoneFn:`flowAdminReadingWeekly('${_wkId}','__MODE__')`,
                 wTrainClick:`openWeeklyTest('${_wkId}','train')`, wExamClick:`openWeeklyTest('${_wkId}','exam')`, wTrainPassed:_rTrainPassed, wExamDone:_rExamDone};
         } else {
             readingHW={label:`${bookName} · Unit ${nh.unitNum} · ${nh.phase}`,sub:`${fmtDate(nh.date)} (${nh.dayKor}요일)`,onclick:`openUnit('${nh.uk}')`,icon:'📖',phase:nh.phase,examDone:nh.examDone,examOnclick:`openUnit('${nh.uk}')`,selfDoneFn:`flowAdminReadingSelf('${nh.uk}')`,examDoneFn:`flowAdminReadingExam('${nh.uk}')`};
@@ -2612,7 +2622,8 @@ function renderSchedule(s){
                             const _vTrainPassed=!!_vTrainRec&&((_vTrainRec.bestScore>=_vTarget)||((_vTrainRec.attempts||0)>=2)||_vTrainRec.adminCompleted);
                             const _vDayId=vDeck.days[wDS2-1]?.id||'';
                             const wPhase=_vTrainPassed?'실전':'훈련';
-                            vocabHW={label:`${deckName2} · 🟠 주간평가 ${wPhase}`,sub:`${fmtDate(vs.date)} (${dayKor[vs.date.getDay()]}요일)`,onclick:`openVocabWeeklyExam('${_vocabDeckId}','${_vDayId}','${_vTrainPassed?'exam':'train'}',${wDS2},${wDE2})`,icon:'🔤',phase:wPhase,isWeekly:true,weeklyDoneFn:`flowAdminVocabWeekly('${_vocabDeckId}',${wDS2},${wDE2},'__MODE__')`,
+                            const _vRangeLabel=(wDE2&&wDE2!==wDS2)?` (DAY${wDS2}~${wDE2})`:` (DAY${wDS2})`;
+                            vocabHW={label:`${deckName2} · 🟠 주간평가 ${wPhase}${_vRangeLabel}`,sub:`${fmtDate(vs.date)} (${dayKor[vs.date.getDay()]}요일)`,onclick:`openVocabWeeklyExam('${_vocabDeckId}','${_vDayId}','${_vTrainPassed?'exam':'train'}',${wDS2},${wDE2})`,icon:'🔤',phase:wPhase,isWeekly:true,weeklyDoneFn:`flowAdminVocabWeekly('${_vocabDeckId}',${wDS2},${wDE2},'__MODE__')`,
                                 wTrainClick:`openVocabWeeklyExam('${_vocabDeckId}','${_vDayId}','train',${wDS2},${wDE2})`, wExamClick:`openVocabWeeklyExam('${_vocabDeckId}','${_vDayId}','exam',${wDS2},${wDE2})`, wTrainPassed:_vTrainPassed, wExamDone:_vExamDone};
                             break;
                         }
@@ -2706,7 +2717,17 @@ function renderSchedule(s){
             const _rTrainPassed=!!(_wkRec&&_wkRec.trainDone);
             const _rExamDone=!!(_wkRec&&_wkRec.examDone);
             const _wkPhase=_rTrainPassed?'실전':'훈련';
-            readingHW={label:`${bookName} · 🟠 주간평가 ${_wkPhase}`,sub:_wkSub,onclick:`openWeeklyTest('${_wkId}','${_wkPhase==='실전'?'exam':'train'}')`,icon:'📖',phase:_wkPhase,isWeekly:true,weeklyDoneFn:`flowAdminReadingWeekly('${_wkId}','__MODE__')`,
+            // 그 주 학습일 Unit 범위 계산 (nextHomework 경로와 동일 기준)
+            const _rwMon=getWeekMonday(_wkDate).getTime();
+            let _rwFrom=null,_rwTo=null;
+            for(const _as of allSessions){
+                if(_as.isWeeklyTest)continue;
+                if(getWeekMonday(_as.date).getTime()!==_rwMon)continue;
+                if(_as.date>=_wkDate)continue;
+                if(typeof _as.unitNum==='number'){ if(_rwFrom===null||_as.unitNum<_rwFrom)_rwFrom=_as.unitNum; if(_rwTo===null||_as.unitNum>_rwTo)_rwTo=_as.unitNum; }
+            }
+            const _rwRange=(_rwFrom!=null)?((_rwTo&&_rwTo!==_rwFrom)?` (Unit ${_rwFrom}~${_rwTo})`:` (Unit ${_rwFrom})`):'';
+            readingHW={label:`${bookName} · 🟠 주간평가 ${_wkPhase}${_rwRange}`,sub:_wkSub,onclick:`openWeeklyTest('${_wkId}','${_wkPhase==='실전'?'exam':'train'}')`,icon:'📖',phase:_wkPhase,isWeekly:true,weeklyDoneFn:`flowAdminReadingWeekly('${_wkId}','__MODE__')`,
                 wTrainClick:`openWeeklyTest('${_wkId}','train')`, wExamClick:`openWeeklyTest('${_wkId}','exam')`, wTrainPassed:_rTrainPassed, wExamDone:_rExamDone};
           }
 
@@ -2796,7 +2817,7 @@ function renderSchedule(s){
                     const _vTrainPassed=!!_vTrainRec&&((_vTrainRec.bestScore>=_vTarget)||((_vTrainRec.attempts||0)>=2)||_vTrainRec.adminCompleted);
                     const _vDayId=_vDeck.days[_wDS-1]?.id||'';
                     const _wPhase=_vTrainPassed?'실전':'훈련';
-                    vocabHW={label:`${_deckName} · 🟠 주간평가 ${_wPhase}`,sub:_wkSub,onclick:`openVocabWeeklyExam('${_vocabDeckId}','${_vDayId}','${_vTrainPassed?'exam':'train'}',${_wDS},${_wDE})`,icon:'🔤',phase:_wPhase,isWeekly:true,weeklyDoneFn:`flowAdminVocabWeekly('${_vocabDeckId}',${_wDS},${_wDE},'__MODE__')`,
+                    vocabHW={label:`${_deckName} · 🟠 주간평가 ${_wPhase}${(_wDE&&_wDE!==_wDS)?` (DAY${_wDS}~${_wDE})`:` (DAY${_wDS})`}`,sub:_wkSub,onclick:`openVocabWeeklyExam('${_vocabDeckId}','${_vDayId}','${_vTrainPassed?'exam':'train'}',${_wDS},${_wDE})`,icon:'🔤',phase:_wPhase,isWeekly:true,weeklyDoneFn:`flowAdminVocabWeekly('${_vocabDeckId}',${_wDS},${_wDE},'__MODE__')`,
                         wTrainClick:`openVocabWeeklyExam('${_vocabDeckId}','${_vDayId}','train',${_wDS},${_wDE})`, wExamClick:`openVocabWeeklyExam('${_vocabDeckId}','${_vDayId}','exam',${_wDS},${_wDE})`, wTrainPassed:_vTrainPassed, wExamDone:_vExamDone};
                   }
                 }
