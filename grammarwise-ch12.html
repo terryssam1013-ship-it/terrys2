@@ -3037,18 +3037,18 @@ function _restoreAnswersFromStudentRecord(stageN){
     const _isFresh = params.get('fresh')==='1';
     const _hasSpecialEntry = params.get('wsc')||params.get('wscReview')||params.get('wex')||params.get('wexReview')||params.get('exam')||params.get('scReview')||params.get('examReview');
     if(_isFresh && !_hasSpecialEntry){
-        // ✅ 첫 진입(저장된 진행 없음)일 때만 STEP1부터 새로. 이미 진행 중이면 이어하기.
-        const _hasSaved = !!localStorage.getItem(STORAGE_KEY);
-        if(!_hasSaved){
-            state.cur = 1;
-            state.s1 = false;
-            state.s1Watched = false;
-            state.s2 = {idx:0, ans:[]};
-            state.s3 = {idx:0, ans:[]};
-            state.s4 = {idx:0, ans:[], done:false};
-            state.s5 = {idx:0, ans:[], done:false};
-            save();
-        }
+        // ✅ '시작'(fresh=1)은 항상 STEP1(강의청취)부터 새로 시작한다.
+        //   예전엔 저장된 진행이 없을 때만 리셋해서, 한 번이라도 진행한 챕터는
+        //   마지막 단계(예: STEP5 실전평가)로 복원돼 "시작인데 실전으로 튀는" 버그가 있었다.
+        //   화면 진행상태(state)만 초기화할 뿐, 점수 기록(rl_gr_..._sc_/_exam_)은 별도 키라 보존된다.
+        state.cur = 1;
+        state.s1 = false;
+        state.s1Watched = false;
+        state.s2 = {idx:0, ans:[]};
+        state.s3 = {idx:0, ans:[]};
+        state.s4 = {idx:0, ans:[], done:false};
+        state.s5 = {idx:0, ans:[], done:false};
+        save();
     }
     // 주간평가 진입 (wsc=N: 훈련, wex=N: 실전)
     const wscIdx = params.get('wsc') || params.get('wscReview');
