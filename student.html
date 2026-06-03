@@ -1631,6 +1631,60 @@ function getWeekMonday(d){
     return dt;
 }
 
+// 현재 활성 주차(월요일) 계산 — 공용 헬퍼.
+//
+// 핵심 규칙: "학생에게 가장 가까운 한 주"를 하한선(floor)으로 삼고,
+//   저장된 rl_active_week가 그 하한선보다 더 뒤(미래)일 때만 저장값을 존중한다.
+//   → floor와 저장값 중 '더 뒤'를 고른다.
+//
+// 이렇게 하면 세 가지가 모두 자연스럽게 처리된다:
+//   1) 다음 주 시작 학생을 오늘 미리 세팅 → 잔존/이전 active_week를 무시하고
+//      학생의 첫 수업 주를 보여줌 ('표시할 일정이 없습니다' 방지)
+//   2) 이번 주 수업이 모두 지나감 → 자동으로 다음 수업 주를 보여줌
+//   3) NEXT(advanceWeek)로 미래 주차까지 진행한 학생 → 그 진행 상태를 유지
+//
+// floor 정의:
+//   - 아직 시작 전(today < startDate)이면 → 시작일이 속한 주
+//   - 시작했으면 → 오늘 이후 남아있는 '첫 수업 세션'이 속한 주
+//     (이번 주 수업이 다 끝났으면 자연히 다음 주가 됨)
+// rl_active_week는 학생별로 분리되지 않은 공용 키라, 이 floor 가드가 특히 중요하다.
+function getActiveWeekMonday(sd){
+    sd=sd||{};
+    const startDate=sd.startDate?new Date(sd.startDate+'T00:00:00'):new Date();
+    startDate.setHours(0,0,0,0);
+    const today=new Date();today.setHours(0,0,0,0);
+
+    // ── floor(가장 가까운 주의 월요일) 계산 ──
+    let floorBase;
+    if(today<startDate){
+        floorBase=new Date(startDate);            // 시작 전 → 시작주
+    } else {
+        // 오늘 이후 남아있는 첫 수업 세션을 찾아 그 주로
+        let nextSession=null;
+        try{
+            const horizon=addDays(today,365);
+            const sess=buildAllSessions(sd,horizon);
+            nextSession=sess.find(x=>x.date>=today)||null;
+        }catch(e){}
+        floorBase=nextSession?new Date(nextSession.date):new Date(today);
+    }
+    const floorMon=getWeekMonday(floorBase);
+    floorMon.setHours(0,0,0,0);
+
+    // ── 저장된 active_week가 floor보다 뒤면 존중(= NEXT 진행분 유지) ──
+    let result=floorMon;
+    const storedAW=RL_STORE.get('rl_active_week');
+    if(storedAW){
+        const aw=new Date(storedAW+'T00:00:00');
+        if(!isNaN(aw.getTime())){
+            const awMon=getWeekMonday(aw);
+            awMon.setHours(0,0,0,0);
+            if(awMon>floorMon) result=awMon;      // floor와 저장값 중 더 뒤를 선택
+        }
+    }
+    return result;
+}
+
 // 시작일부터 endDate까지 모든 수업 세션 생성
 function buildAllSessions(sd,endDate){
     const dayKor=['일','월','화','수','목','금','토'];
@@ -1685,15 +1739,9 @@ function renderSchedule(s){
     let filterStart;
     
     if(state.schedTab==='week'){
-        // 주간일정: 저장된 activeWeek부터 1주(7일)만 표시
-        const awKey='rl_active_week';
-        const storedAW=RL_STORE.get(awKey);
-        if(storedAW){
-            baseDate=new Date(storedAW+'T00:00:00');
-        } else {
-            baseDate=today<startDate?new Date(startDate):new Date(today);
-        }
-        baseDate=getWeekMonday(baseDate);
+        // 주간일정: 활성 주차(월요일)부터 1주(7일)만 표시.
+        // 저장된 rl_active_week가 학생 시작주보다 이전이면 무시(가드는 헬퍼 내부 처리).
+        baseDate=getActiveWeekMonday(s);
         baseDate.setHours(0,0,0,0);
         filterStart=new Date(baseDate);
         displayEnd=addDays(baseDate,6); // 1주(7일)
@@ -1771,53 +1819,6 @@ function renderSchedule(s){
             } else {
                 currentIdx=i;break;
             }
-        }
-    }
-    
-    // 🛟 fallback: 루프가 멈출 세션을 못 찾아 currentIdx=-1로 끝난 경우
-    //   (구간 점프/콘솔 주입 등으로 "여러 Unit이 실전 완료 판정인데 flow는 selfcheck"
-    //    같은 데이터 불일치가 생기면, 위 루프가 break 지점을 못 잡고 -1로 떨어진다.
-    //    → nextHomework=null → readingHW=null → classify='done' 으로 잘못 "완료" 표시되는 버그.)
-    //   해결: 학습일(주간평가 제외) 중 '실전 미완(sc.exam===null)'인 가장 이른 세션을 잡아준다.
-    //         그것도 없으면(진짜 전부 완료) -1 유지 = 다음 주 대기(케이스 C, 정상).
-    if(currentIdx===-1){
-        // (a) 실전 미완(sc.exam===null) 학습일이 있으면 그게 진짜 다음 숙제
-        let _fbIdx=-1;
-        for(let i=0;i<sessions.length;i++){
-            const sess=sessions[i];
-            if(sess.isWeeklyTest)continue;
-            const uk='unit'+sess.unitNum;
-            const unit=ba[uk];
-            if(unit&&(unit.articles||[]).length>0){
-                const sc=getUnitScores(bookName,uk,unit.articles.length);
-                if(sc.exam===null){_fbIdx=i;break;}
-            } else {
-                _fbIdx=i;break; // 교재 데이터 없는 학습일도 진행 대상
-            }
-        }
-        // (b) 미완 학습일이 하나도 없는데(=전부 실전완료 판정) 멈출 곳도 못 찾은 모순 상태.
-        //     → 표시 구간 내 '주간평가가 아직 examDone 안 됨'이면 한 주가 진짜로 끝난 게 아니다.
-        //       (구간 점프/콘솔 주입 잔재로 생긴 데이터 불일치 = 신지효 케이스)
-        //       이때는 첫 학습일을 잡아 "완료" 오표시를 막는다.
-        //     반대로 모든 주간평가가 examDone이거나 표시 구간에 주간평가가 없으면
-        //       → 진짜 다음 주 대기(케이스 C) → currentIdx=-1 유지(정상 완료 표시).
-        if(_fbIdx===-1){
-            let _anyWeeklyPending=false, _firstLearnIdx=-1;
-            for(let i=0;i<sessions.length;i++){
-                const sess=sessions[i];
-                if(sess.isWeeklyTest){
-                    const weekId=fmtDateISO(sess.date);
-                    const wkRec=LS.g('weekly_'+getUser().id+'_'+bookName+'_'+weekId);
-                    if(!(wkRec&&wkRec.examDone)) _anyWeeklyPending=true;
-                } else if(_firstLearnIdx===-1){
-                    _firstLearnIdx=i;
-                }
-            }
-            if(_anyWeeklyPending && _firstLearnIdx!==-1) _fbIdx=_firstLearnIdx;
-        }
-        if(_fbIdx!==-1){
-            currentIdx=_fbIdx;
-            try{console.warn('[리딩 fallback] currentIdx=-1 → 보정:',currentIdx, sessions[currentIdx]&&fmtDateISO(sessions[currentIdx].date));}catch(e){}
         }
     }
     
@@ -3297,9 +3298,8 @@ function _clearWeeklyStepRecords(subjectKey, kind, doneFnStr){
             const prefix=_grammarKeyPrefix();
             const exKey=prefix+'wex_'+weekIdx;       // 주간 실전
             const scKey=prefix+'wsc_'+weekIdx;       // 주간 셀프체크(훈련)
-            // 🔑 RL_STORE.remove로 삭제 → 서버 push 큐 경유(Firebase 반영). localStorage도 직접 정리.
-            const killExam=()=>{ try{ RL_STORE.remove(exKey); }catch(e){} try{ localStorage.removeItem(exKey); }catch(e){} };
-            const killTrain=()=>{ try{ RL_STORE.remove(scKey); }catch(e){} try{ localStorage.removeItem(scKey); }catch(e){} };
+            const killExam=()=>{ try{ localStorage.removeItem(exKey); }catch(e){} try{ if(window.RLStorage&&RLStorage.isReady())RLStorage.removeItem(exKey);}catch(e){} };
+            const killTrain=()=>{ try{ localStorage.removeItem(scKey); }catch(e){} try{ if(window.RLStorage&&RLStorage.isReady())RLStorage.removeItem(scKey);}catch(e){} };
             if(kind==='wexam'){ killExam(); }
             else { killExam(); killTrain(); }
         } else if(subjectKey==='vocab'){
@@ -3425,26 +3425,12 @@ function _clearStepRecords(subjectKey, kind){
 function _clearByPrefix(prefixNoRl, hasRlPrefix){
     // hasRlPrefix=true면 키가 'rl_'+prefixNoRl 로 저장됨(LS.s 계열), false면 그대로
     const full = hasRlPrefix ? ('rl_'+prefixNoRl) : prefixNoRl;
-    // 🔑 삭제 대상 키를 먼저 '모으기'만 한다(중복 제거).
-    //    - localStorage / RLStorage 양쪽을 스캔해 후보 키를 수집
-    //    - 실제 삭제는 RL_STORE.remove로 일괄 처리 → 서버 push 큐를 타서 Firebase까지 삭제 반영
-    //    (기존 버그: localStorage.removeItem / RLStorage.removeItem 을 직접 호출해
-    //     서버 push 큐를 안 거쳤음 → 서버엔 기록이 남아 다음 동기화 때 되살아남
-    //     = "구간 점프 되돌리기 해도 다시 숙제완료로 뜨는" 현상의 근본 원인.)
-    const killSet = new Set();
-    for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf(full)===0) killSet.add(k); }
+    const kill=[];
+    for(let i=localStorage.length-1;i>=0;i--){ const k=localStorage.key(i); if(k&&k.indexOf(full)===0){ kill.push(k); localStorage.removeItem(k); } }
     if(window.RLStorage&&RLStorage.isReady()){
-        try{ RLStorage.keys().forEach(k=>{ if(k&&k.indexOf(full)===0) killSet.add(k); }); }catch(e){}
+        try{ RLStorage.keys().forEach(k=>{ if(k.indexOf(full)===0){ kill.push(k); RLStorage.removeItem(k);} }); if(RLStorage.flush)RLStorage.flush(); }catch(e){}
     }
-    const kill=Array.from(killSet);
-    // RL_STORE.remove: RLStorage(IndexedDB) 삭제 + 서버 push 큐 등록(539~548줄 래퍼).
-    //   localStorage는 RL_STORE.remove가 안 건드리므로(스냅샷 유지 설계) 여기서 직접 정리.
-    kill.forEach(k=>{
-        try{ RL_STORE.remove(k); }catch(e){ console.warn('RL_STORE.remove 실패',k,e); }
-        try{ localStorage.removeItem(k); }catch(e){}
-    });
-    if(window.RLStorage&&RLStorage.flush){ try{ RLStorage.flush(); }catch(e){} }
-    console.log('[어드민 되돌리기] 삭제(서버 동기화 포함):',kill);
+    console.log('[어드민 되돌리기] 삭제:',kill);
 }
 
 function _clearLatestGrammar(uid, kind){
@@ -3457,10 +3443,9 @@ function _clearLatestGrammar(uid, kind){
     if(cand.length===0){ console.log('[어드민 되돌리기] 문법 삭제 대상 없음'); return; }
     const maxN=Math.max(...cand.map(c=>c.n));
     cand.filter(c=>c.n===maxN).forEach(c=>{
-        // 🔑 RL_STORE.remove로 삭제 → 서버 push 큐 경유(Firebase 반영). localStorage는 직접 정리.
-        try{ RL_STORE.remove(c.k); }catch(e){ console.warn('RL_STORE.remove 실패',c.k,e); }
         try{ localStorage.removeItem(c.k); }catch(e){}
-        console.log('[어드민 되돌리기] 문법 삭제(서버 동기화 포함):',c.k);
+        if(window.RLStorage&&RLStorage.isReady()){ try{ RLStorage.removeItem(c.k); }catch(e){} }
+        console.log('[어드민 되돌리기] 문법 삭제:',c.k);
     });
     if(window.RLStorage&&RLStorage.flush){ try{ RLStorage.flush(); }catch(e){} }
 }
@@ -3468,10 +3453,8 @@ function _clearLatestGrammar(uid, kind){
 function advanceWeek(){
     const awKey='rl_active_week';
     const sd=getStudentData()||{};
-    const startDate=sd.startDate?new Date(sd.startDate+'T00:00:00'):new Date();
-    const stored=RL_STORE.get(awKey);
-    let current=stored?new Date(stored+'T00:00:00'):getWeekMonday(startDate);
-    current=getWeekMonday(current);
+    // 현재 활성 주차를 가드 헬퍼로 구해(시작주 이전 잔존값 보정) 거기서 +7일.
+    const current=getActiveWeekMonday(sd);
     const next=addDays(current,7);
     RL_STORE.set(awKey,fmtDateISO(next));
     render();
@@ -3565,12 +3548,8 @@ function executeSkipWeek(){
     const sd=getStudentData()||{};
     if(!sd){alert('학생 정보를 찾을 수 없습니다');return;}
     
-    // 이번 주 시작/끝 계산 (현재 활성 주차)
-    const awKey='rl_active_week';
-    const startDate=sd.startDate?new Date(sd.startDate+'T00:00:00'):new Date();
-    const storedAW=RL_STORE.get(awKey);
-    let weekStart=storedAW?new Date(storedAW+'T00:00:00'):getWeekMonday(startDate<=new Date()?startDate:new Date());
-    weekStart=getWeekMonday(weekStart);
+    // 이번 주 시작/끝 계산 (현재 활성 주차) — 표시 화면과 동일한 가드 헬퍼 사용
+    let weekStart=getActiveWeekMonday(sd);
     weekStart.setHours(0,0,0,0);
     const weekEnd=addDays(weekStart,6);
     
