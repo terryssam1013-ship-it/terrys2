@@ -1774,6 +1774,53 @@ function renderSchedule(s){
         }
     }
     
+    // 🛟 fallback: 루프가 멈출 세션을 못 찾아 currentIdx=-1로 끝난 경우
+    //   (구간 점프/콘솔 주입 등으로 "여러 Unit이 실전 완료 판정인데 flow는 selfcheck"
+    //    같은 데이터 불일치가 생기면, 위 루프가 break 지점을 못 잡고 -1로 떨어진다.
+    //    → nextHomework=null → readingHW=null → classify='done' 으로 잘못 "완료" 표시되는 버그.)
+    //   해결: 학습일(주간평가 제외) 중 '실전 미완(sc.exam===null)'인 가장 이른 세션을 잡아준다.
+    //         그것도 없으면(진짜 전부 완료) -1 유지 = 다음 주 대기(케이스 C, 정상).
+    if(currentIdx===-1){
+        // (a) 실전 미완(sc.exam===null) 학습일이 있으면 그게 진짜 다음 숙제
+        let _fbIdx=-1;
+        for(let i=0;i<sessions.length;i++){
+            const sess=sessions[i];
+            if(sess.isWeeklyTest)continue;
+            const uk='unit'+sess.unitNum;
+            const unit=ba[uk];
+            if(unit&&(unit.articles||[]).length>0){
+                const sc=getUnitScores(bookName,uk,unit.articles.length);
+                if(sc.exam===null){_fbIdx=i;break;}
+            } else {
+                _fbIdx=i;break; // 교재 데이터 없는 학습일도 진행 대상
+            }
+        }
+        // (b) 미완 학습일이 하나도 없는데(=전부 실전완료 판정) 멈출 곳도 못 찾은 모순 상태.
+        //     → 표시 구간 내 '주간평가가 아직 examDone 안 됨'이면 한 주가 진짜로 끝난 게 아니다.
+        //       (구간 점프/콘솔 주입 잔재로 생긴 데이터 불일치 = 신지효 케이스)
+        //       이때는 첫 학습일을 잡아 "완료" 오표시를 막는다.
+        //     반대로 모든 주간평가가 examDone이거나 표시 구간에 주간평가가 없으면
+        //       → 진짜 다음 주 대기(케이스 C) → currentIdx=-1 유지(정상 완료 표시).
+        if(_fbIdx===-1){
+            let _anyWeeklyPending=false, _firstLearnIdx=-1;
+            for(let i=0;i<sessions.length;i++){
+                const sess=sessions[i];
+                if(sess.isWeeklyTest){
+                    const weekId=fmtDateISO(sess.date);
+                    const wkRec=LS.g('weekly_'+getUser().id+'_'+bookName+'_'+weekId);
+                    if(!(wkRec&&wkRec.examDone)) _anyWeeklyPending=true;
+                } else if(_firstLearnIdx===-1){
+                    _firstLearnIdx=i;
+                }
+            }
+            if(_anyWeeklyPending && _firstLearnIdx!==-1) _fbIdx=_firstLearnIdx;
+        }
+        if(_fbIdx!==-1){
+            currentIdx=_fbIdx;
+            try{console.warn('[리딩 fallback] currentIdx=-1 → 보정:',currentIdx, sessions[currentIdx]&&fmtDateISO(sessions[currentIdx].date));}catch(e){}
+        }
+    }
+    
     // 다음 숙제 카드용 정보
     let nextHomework=null;
     if(currentIdx>=0){
