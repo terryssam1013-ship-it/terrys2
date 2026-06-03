@@ -1222,13 +1222,17 @@ function setFlowState(obj){
 }
 // [숙제 완료] 클릭 → 실전평가 잠금 해제
 function flowCompleteHomework(){
-    // 🛡️ 클릭 가드: 단어 셀프(숙제)가 이번 주 모든 학습일에 실제 완료됐는지 데이터 확인
+    // 🛡️ 클릭 가드: 세 과목 셀프(숙제)가 이번 주 모든 학습일에 실제 완료됐는지 데이터 확인
     try{
-        if(!_vocabStageComplete('self')){
-            alert('단어 셀프체크(숙제)가 아직 완료되지 않은 학습일이 있어요.\n모든 학습일의 단어 숙제를 마친 뒤 진행할 수 있습니다.');
+        const pend=[];
+        if(!_vocabStageComplete('self')) pend.push('단어');
+        if(!_readingStageComplete('self')) pend.push('리딩');
+        if(!_grammarStageComplete('self')) pend.push('문법');
+        if(pend.length){
+            alert(pend.join('·')+' 셀프체크(숙제)가 아직 완료되지 않은 학습일이 있어요.\n모든 학습일의 숙제를 마친 뒤 진행할 수 있습니다.');
             return;
         }
-    }catch(e){ console.warn('[가드] 단어 셀프 검증 실패(통과 처리):',e); }
+    }catch(e){ console.warn('[가드] 셀프 검증 실패(통과 처리):',e); }
     const st=getFlowState()||{};
     st.phase='exam';
     setFlowState(st);
@@ -1236,14 +1240,18 @@ function flowCompleteHomework(){
 }
 // [다음날 숙제 가기] 클릭 → 다음 학습일 셀프체크로
 function flowGoNextDay(){
-    // 🛡️ 클릭 가드: 단어 실전평가가 이번 주 모든 학습일에 실제 응시됐는지 데이터 확인
-    //   (신지효 케이스: DAY2 실전 기록 없는데 NEXT가 떠서 단계 건너뛴 버그 방지)
+    // 🛡️ 클릭 가드: 세 과목 실전평가가 이번 주 모든 학습일에 실제 응시됐는지 데이터 확인
+    //   (신지효 케이스: 실전 기록 없는데 NEXT가 떠서 단계 건너뛴 버그 방지)
     try{
-        if(!_vocabStageComplete('exam')){
-            alert('단어 실전평가가 아직 응시되지 않은 학습일이 있어요.\n모든 학습일의 단어 실전평가를 마친 뒤 진행할 수 있습니다.');
+        const pend=[];
+        if(!_vocabStageComplete('exam')) pend.push('단어');
+        if(!_readingStageComplete('exam')) pend.push('리딩');
+        if(!_grammarStageComplete('exam')) pend.push('문법');
+        if(pend.length){
+            alert(pend.join('·')+' 실전평가가 아직 응시되지 않은 학습일이 있어요.\n모든 학습일의 실전평가를 마친 뒤 진행할 수 있습니다.');
             return;
         }
-    }catch(e){ console.warn('[가드] 단어 실전 검증 실패(통과 처리):',e); }
+    }catch(e){ console.warn('[가드] 실전 검증 실패(통과 처리):',e); }
     // 실전까지 끝난 현재 학습일 다음으로 진행:
     // 진도는 점수 데이터 기반으로 자동 전진하므로, phase만 selfcheck로 되돌리면
     // 다음 미완료 항목(=다음 학습일)이 카드에 잡힌다.
@@ -1254,6 +1262,16 @@ function flowGoNextDay(){
 }
 // 주간평가 5단계(훈련) → 6단계(실전) : NEXT 버튼
 function flowWeeklyToExam(){
+    // 🛡️ 가드: 세 과목 주간평가 훈련(5단계)이 모두 통과됐는지 (_flowSubjects는 렌더 직후 최신)
+    try{
+        const subs=window._flowSubjects||[];
+        const pend=subs.filter(x=>x.isWeekly && !x.wTrainPassed).map(x=>x.key);
+        if(pend.length){
+            const nm={reading:'리딩',grammar:'문법',vocab:'단어'};
+            alert(pend.map(k=>nm[k]||k).join('·')+' 주간평가 훈련이 아직 통과되지 않았어요.\n세 과목 훈련을 모두 마친 뒤 실전평가가 열립니다.');
+            return;
+        }
+    }catch(e){ console.warn('[가드] 주간훈련 검증 실패(통과 처리):',e); }
     const st=getFlowState()||{};
     st.weeklyStage='exam';
     setFlowState(st);
@@ -1261,6 +1279,16 @@ function flowWeeklyToExam(){
 }
 // 주간평가 6단계(실전) 완료 → 다음 주로 (weeklyStage 초기화 후 advanceWeek)
 function flowWeeklyNextWeek(){
+    // 🛡️ 가드: 세 과목 주간평가 실전(6단계)이 모두 응시됐는지
+    try{
+        const subs=window._flowSubjects||[];
+        const pend=subs.filter(x=>x.isWeekly && !x.wExamDone).map(x=>x.key);
+        if(pend.length){
+            const nm={reading:'리딩',grammar:'문법',vocab:'단어'};
+            alert(pend.map(k=>nm[k]||k).join('·')+' 주간평가 실전이 아직 응시되지 않았어요.\n세 과목 실전평가를 모두 마친 뒤 다음 주로 넘어갑니다.');
+            return;
+        }
+    }catch(e){ console.warn('[가드] 주간실전 검증 실패(통과 처리):',e); }
     const st=getFlowState()||{};
     delete st.weeklyStage;
     setFlowState(st);
@@ -1338,6 +1366,97 @@ function _vocabStageComplete(stage){
             const r=reAll[key];
             // 실전 완료 = 1회 응시(기록 존재)
             if(!r) return false;
+        }
+    }
+    return true;
+}
+
+// 리딩: 이번 주 각 학습일의 unitKey 목록
+function _readingWeekUnitKeys(){
+    const s=getStudentData()||{};
+    const book=s.textbooks&&s.textbooks.reading;
+    if(!book) return {book:null,unitKeys:[]};
+    const startUnit=parseInt(s.startUnit)||1;
+    // 전체 학습일 순서에서 이번 주 학습일들의 unitNum 계산
+    let allLearn=[];
+    try{ allLearn=buildAllSessions(s, addDays(getActiveWeekMonday(s),6)); }catch(e){ allLearn=[]; }
+    const learnOnly=allLearn.filter(x=>!x.isWeeklyTest);
+    const weekSessions=_thisWeekLearnSessions();
+    const unitKeys=[];
+    weekSessions.forEach(ws=>{
+        let idx=0;
+        for(const ls of learnOnly){
+            if(new Date(ls.date).getTime()===new Date(ws.date).getTime()) break;
+            idx++;
+        }
+        unitKeys.push('unit'+(startUnit+idx));
+    });
+    return {book,unitKeys};
+}
+
+// 리딩: 현재 단계 완료 여부를 데이터로 검증. (기존 getUnitScores 재활용 → 판정 일치)
+//   stage: 'self'(셀프=trainRec 존재) | 'exam'(실전=exam 점수 존재)
+function _readingStageComplete(stage){
+    const {book,unitKeys}=_readingWeekUnitKeys();
+    if(!book||unitKeys.length===0) return true;
+    for(const uk of unitKeys){
+        let sc=null;
+        try{
+            const arts=(getArticles()[book]||{})[uk];
+            const artCount=(arts&&arts.articles)?arts.articles.length:1;
+            sc=getUnitScores(book, uk, artCount);
+        }catch(e){ continue; } // 데이터 못 읽으면 그 unit은 건너뜀(과하게 막지 않음)
+        if(!sc) continue;
+        if(stage==='self'){
+            if(!sc.trainRec) return false;          // 셀프(훈련모드) 미완료
+        } else if(stage==='exam'){
+            if(sc.exam===null||sc.exam===undefined) return false; // 실전 미응시
+        }
+    }
+    return true;
+}
+
+// 문법: 이번 주 각 학습일의 챕터(Unit) 번호 목록 (나모그=챕터 단위)
+function _grammarWeekUnits(){
+    const s=getStudentData()||{};
+    const book=s.textbooks&&s.textbooks.grammar;
+    if(!book) return {book:null,units:[]};
+    const startPt=parseInt(s.startGrammarPoint)||1;
+    const isNamog=/namog|나모그/i.test(book);
+    const startUnit=isNamog?startPt:Math.ceil(startPt/4);
+    let allLearn=[];
+    try{ allLearn=buildAllSessions(s, addDays(getActiveWeekMonday(s),6)); }catch(e){ allLearn=[]; }
+    const learnOnly=allLearn.filter(x=>!x.isWeeklyTest);
+    const weekSessions=_thisWeekLearnSessions();
+    const units=[];
+    weekSessions.forEach(ws=>{
+        let idx=0;
+        for(const ls of learnOnly){
+            if(new Date(ls.date).getTime()===new Date(ws.date).getTime()) break;
+            idx++;
+        }
+        units.push(startUnit+idx);
+    });
+    return {book,units};
+}
+
+// 문법: 현재 단계 완료 여부를 데이터로 검증.
+//   stage: 'self'(셀프=_recIsPassed) | 'exam'(실전=exams 기록 존재)
+function _grammarStageComplete(stage){
+    const {book,units}=_grammarWeekUnits();
+    if(!book||units.length===0) return true;
+    let recs=null;
+    try{ recs=getGrammarRecords(); }catch(e){ return true; } // 못 읽으면 과하게 막지 않음
+    if(!recs) return true;
+    for(const u of units){
+        if(stage==='self'){
+            if(!_recIsPassed(recs.selfChecks&&recs.selfChecks[u])) return false; // 셀프 미통과(프리패스 반영)
+        } else if(stage==='exam'){
+            const ex=recs.exams&&recs.exams[u];
+            const att=ex&&ex.attempts;
+            const n=Array.isArray(att)?att.length:(typeof att==='number'?att:0);
+            const done=!!ex&&(n>0||ex.adminCompleted);
+            if(!done) return false; // 실전 미응시
         }
     }
     return true;
