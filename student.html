@@ -2154,9 +2154,10 @@ function renderSchedule(s){
             grammarExamCell=lockCell;
         } else if(weeklyInfo){
             // 평가일 — 주간 셀프체크 / 주간 실전평가 (리딩 평가와 동일한 주황색)
-            const wIdx=weeklyInfo.weekIdx;
             const wFrom=weeklyInfo.fromUnit;
             const wTo=weeklyInfo.toUnit;
+            // 주간평가 풀은 교재 절대기준(week1=Ch1~2...). 시작 챕터로 풀week번호 계산.
+            const wIdx=Math.floor((wFrom-1)/2)+1;
             const wscData=_gRecords.weeklySC?.[wIdx];
             const lastWsc=(wscData?.attempts?.length>0)?wscData.attempts[wscData.attempts.length-1]:null;
             const _wscAttempts=wscData?.attempts?.length||0;
@@ -2518,9 +2519,12 @@ function renderSchedule(s){
             // 🟠 주간평가: 5단계 훈련(wsc) → 80점 통과 시 6단계 실전(wex) → 실전 완료 시 done.
             //   스케줄 셀과 동일한 URL 패턴(&wsc/&wex=week&from=&to=) 사용.
             const _gWk = sessWeeklyInfo[grammarNextRowIdx] || {};
-            const _gWkIdx = _gWk.weekIdx || 1;
             const _gFrom = _gWk.fromUnit || parseInt(s.startGrammarPoint||'1');
             const _gTo = _gWk.toUnit || _gFrom;
+            // 🔑 주간평가 풀(week)은 '교재 절대 기준'(week1=Ch1~2, week2=Ch3~4...)이라,
+            //   학생 일정상 주차가 아니라 시작 챕터로 풀 week번호를 계산해야 한다.
+            //   (예: Ch3 시작 학생 → week2=Ch3~4). 홀수 챕터에서만 시작하는 운영 기준.
+            const _gWkIdx = Math.floor((_gFrom-1)/2)+1;
             const _gBase = getGrammarUrl(_gFrom);
             const _gWscUrl = `${_gBase}&wsc=${_gWkIdx}&from=${_gFrom}&to=${_gTo}`;
             const _gWexUrl = `${_gBase}&wex=${_gWkIdx}&from=${_gFrom}&to=${_gTo}`;
@@ -2535,7 +2539,8 @@ function renderSchedule(s){
             const _gGrammarName = s.textbooks?.grammar||'문법';
             const _gSub = `${fmtDate(gSess.date)} (${dayKor[gSess.date.getDay()]}요일)`;
             const _gPhaseLabel = _gWscPassed ? '실전' : '훈련';
-            grammarHW={label:`${_gGrammarName} · 🟠 주간평가 ${_gPhaseLabel}`,sub:_gSub,onclick:`window.location.href='${_gWscPassed?_gWexUrl:_gWscUrl}'`,icon:'📝',phase:_gPhaseLabel,isWeekly:true,weeklyDoneFn:`flowAdminGrammarWeekly(${_gWkIdx},${_gFrom},${_gTo},'__MODE__')`,
+            const _gRangeLabel = (_gTo&&_gTo!==_gFrom) ? ` (Ch${_gFrom}~${_gTo})` : ` (Ch${_gFrom})`;
+            grammarHW={label:`${_gGrammarName} · 🟠 주간평가 ${_gPhaseLabel}${_gRangeLabel}`,sub:_gSub,onclick:`window.location.href='${_gWscPassed?_gWexUrl:_gWscUrl}'`,icon:'📝',phase:_gPhaseLabel,isWeekly:true,weeklyDoneFn:`flowAdminGrammarWeekly(${_gWkIdx},${_gFrom},${_gTo},'__MODE__')`,
                 wTrainClick:`window.location.href='${_gWscUrl}'`, wExamClick:`window.location.href='${_gWexUrl}'`, wTrainPassed:_gWscPassed, wExamDone:_gWexDone};
         } else {
             const scD=_gRecords.selfChecks?.[gUnit];
@@ -3930,7 +3935,8 @@ function renderTodayStatus(s){
             const weekLessons=allSess.filter(x=>!x.isWeeklyTest&&getWeekMonday(x.date).getTime()===weekMon.getTime()&&x.date<todaySess.date);
             const wFrom=_startGU+Math.max(0,gLessonIdx-weekLessons.length);
             const wTo=_startGU+gLessonIdx-1;
-            const wIdx=Math.ceil((wFrom-_startGU+1)/2)||1;
+            // 주간평가 풀은 교재 절대기준(week1=Ch1~2...). 시작 챕터로 풀week번호 계산.
+            const wIdx=Math.floor((wFrom-1)/2)+1;
             const wscData=_gRec.weeklySC?.[wIdx];
             const lastWsc=(wscData?.attempts?.length>0)?wscData.attempts[wscData.attempts.length-1]:null;
             const wexData=_gRec.weeklyExam?.[wIdx];
