@@ -1405,13 +1405,12 @@ function _readingStageComplete(stage){
             const arts=(getArticles()[book]||{})[uk];
             const artCount=(arts&&arts.articles)?arts.articles.length:1;
             sc=getUnitScores(book, uk, artCount);
-        }catch(e){ continue; } // 읽기 자체가 에러난 경우만 건너뜀(과하게 막지 않음)
-        // sc===null/undefined 는 데이터가 "없는" 것 → 미완료로 봐야 함.
-        // (예전 if(!sc) continue; 는 신규/빈데이터 학생을 전부 통과로 오판했음)
+        }catch(e){ continue; } // 데이터 못 읽으면 그 unit은 건너뜀(과하게 막지 않음)
+        if(!sc) continue;
         if(stage==='self'){
-            if(!sc||!sc.trainRec) return false;          // 셀프(훈련모드) 미완료
+            if(!sc.trainRec) return false;          // 셀프(훈련모드) 미완료
         } else if(stage==='exam'){
-            if(!sc||sc.exam===null||sc.exam===undefined) return false; // 실전 미응시
+            if(sc.exam===null||sc.exam===undefined) return false; // 실전 미응시
         }
     }
     return true;
@@ -4323,6 +4322,12 @@ function renderHorizontalProgress(s){
     let vcSelfAll = {}, vcExamAll = {};
     try{ vcSelfAll = JSON.parse(RL_STORE.get(_vcKey('rl_vc_selfcheck')) || '{}'); }catch(e){}
     try{ vcExamAll = JSON.parse(RL_STORE.get(_vcKey('rl_vc_realexam')) || '{}'); }catch(e){}
+    // 주간평가(5·6단계) 점수 데이터 — 단어 주간 훈련/실전
+    let vcWTrainAll = {}, vcWExamAll = {};
+    try{ vcWTrainAll = JSON.parse(RL_STORE.get(_vcKey('rl_vc_weeklyexam_train')) || '{}'); }catch(e){}
+    try{ vcWExamAll = JSON.parse(RL_STORE.get(_vcKey('rl_vc_weeklyexam_exam')) || '{}'); }catch(e){}
+    // 나모그 여부 (주간평가 풀 week번호 계산용)
+    const _isNamogTbl = /namog|나모그/i.test(grammarBook||'') || /namog/i.test((typeof getStudentGrammarLevel==='function'?getStudentGrammarLevel(s):'')||'');
     
     // 헬퍼: 점수 셀 (클릭 가능)
     const scoreCell = (score, onclick, color) => {
@@ -4411,7 +4416,10 @@ function renderHorizontalProgress(s){
                     if(as.date.getTime() === sess.date.getTime()) break;
                     grLessonIdx++;
                 }
-                const startUnitG = Math.floor((grStart-1)/4) + 1;
+                // 나모그=챕터 단위(시작챕터 그대로) / 문마중=4Point가 1Unit(기존식).
+                //   예전엔 둘 다 Math.floor((grStart-1)/4)+1을 써서 나모그 Ch3 시작이 Ch1로 깎이던 버그.
+                const _isNamogCum = /namog|나모그/i.test(grammarBook||'') || /namog/i.test((typeof getStudentGrammarLevel==='function'?getStudentGrammarLevel(s):'')||'');
+                const startUnitG = _isNamogCum ? grStart : (Math.floor((grStart-1)/4) + 1);
                 const rowUnit = startUnitG + grLessonIdx;
                 // 문법 셀프/실전 점수 가져오기
                 //   1순위: getGrammarRecords()의 selfChecks/exams[chapter] (grammarwise 새 키)
@@ -4495,23 +4503,154 @@ function renderHorizontalProgress(s){
             ${grammarHTML}
             ${vocabHTML}
         </tr>`;
+
+        // ─── 주간평가 행 (5·6단계) ───
+        // 이 학습일이 한 주의 마지막 학습일이면, 그 주의 주간평가 점수 행을 바로 뒤에 추가.
+        // 판단: 다음 학습일이 없거나, 다음 학습일이 다른 주(월요일이 다름)면 이번 주 끝.
+        const _curWkMon = getWeekMonday(sess.date).getTime();
+        const _nextLearn = learnDays[dayIdx+1];
+        const _isLastOfWeek = !_nextLearn || getWeekMonday(_nextLearn.date).getTime() !== _curWkMon;
+        if(_isLastOfWeek){
+            // 그 주의 주간평가일 찾기
+            const _wkExam = examDays.find(e => getWeekMonday(e.date).getTime() === _curWkMon);
+            if(_wkExam){
+                const _wkId = fmtDateISO(_wkExam.date);
+                const _wkDateStr = `${_wkExam.date.getMonth()+1}/${_wkExam.date.getDate()} ${['일','월','화','수','목','금','토'][_wkExam.date.getDay()]}`;
+                // 그 주 학습일들의 범위 계산 (이번 주 학습일 = 같은 월요일)
+                const _wkLearns = learnDays.filter(d => getWeekMonday(d.date).getTime() === _curWkMon);
+
+                // ── 리딩 주간 점수 ──
+                let _rTrain = null, _rExam = null;
+                if(bookName){
+                    try{
+                        const _rwRec = LS.g('weekly_'+getUser().id+'_'+bookName+'_'+_wkId);
+                        if(_rwRec){
+                            _rTrain = _rwRec.trainDone ? (_rwRec.trainScore ?? _rwRec.score ?? '✓') : null;
+                            _rExam = _rwRec.examDone ? (_rwRec.score ?? '✓') : null;
+                        }
+                    }catch(e){}
+                }
+                const _rTrainCell = (_rTrain!==null) ? (typeof _rTrain==='number' ? scoreCell(_rTrain, `openWeeklyTest('${_wkId}','train')`, '') : `<span onclick="openWeeklyTest('${_wkId}','train')" style="cursor:pointer;color:var(--green-dark);font-weight:700">완료</span>`) : naCell();
+                const _rExamCell = (_rExam!==null) ? (typeof _rExam==='number' ? scoreCell(_rExam, `openWeeklyTest('${_wkId}','exam')`, '') : `<span onclick="openWeeklyTest('${_wkId}','exam')" style="cursor:pointer;color:var(--green-dark);font-weight:700">완료</span>`) : naCell();
+                const _readingWk = bookName
+                    ? `<td colspan="4" style="padding:6px;border:1px solid #E5E7EB;text-align:center;font-weight:600;color:#B45309">주간평가</td>
+                       <td style="padding:6px;border:1px solid #E5E7EB;text-align:center">${_rTrainCell}</td>
+                       <td style="padding:6px;border:1px solid #E5E7EB;text-align:center">${_rExamCell}</td>`
+                    : `<td colspan="6" style="padding:6px;border:1px solid #E5E7EB;text-align:center;color:var(--text3)">-</td>`;
+
+                // ── 문법 주간 점수 ── (주간평가 풀 week번호 = 시작챕터 기준)
+                let _gWTrain = null, _gWExam = null;
+                if(grammarBook){
+                    try{
+                        // 이번 주 문법 시작 챕터로 풀 week 계산
+                        const _gwFrom = (_isNamogTbl ? grStart : (Math.floor((grStart-1)/4)+1));
+                        // 학습일 인덱스로 주차 추정 → poolWeek = floor((시작챕터-1)/2)+1
+                        const _firstLearn = _wkLearns[0];
+                        let _gLessonIdx = 0;
+                        for(let j=0;j<allSessions.length;j++){
+                            const as=allSessions[j];
+                            if(as.isWeeklyTest) continue;
+                            if(grStartDate && as.date < grStartDate) continue;
+                            if(_firstLearn && as.date.getTime()===_firstLearn.date.getTime()) break;
+                            _gLessonIdx++;
+                        }
+                        const _gChapStart = (_isNamogTbl ? grStart : (Math.floor((grStart-1)/4)+1)) + _gLessonIdx;
+                        const _gPoolWk = Math.floor((_gChapStart-1)/2)+1;
+                        const _wsc = _gRec.weeklySC?.[_gPoolWk];
+                        const _wex = _gRec.weeklyExam?.[_gPoolWk];
+                        if(_wsc && Array.isArray(_wsc.attempts) && _wsc.attempts.length>0){
+                            _gWTrain = _wsc.attempts.reduce((m,a)=>Math.max(m, a.pct ?? a.score ?? 0), 0);
+                        }
+                        if(_wex && Array.isArray(_wex.attempts) && _wex.attempts.length>0){
+                            _gWExam = _wex.attempts.reduce((m,a)=>Math.max(m, a.pct ?? a.score ?? 0), 0);
+                        }
+                        var _gPoolWkRef = _gPoolWk, _gFromRef = _gChapStart;
+                    }catch(e){}
+                }
+                const _gWWk = (typeof _gPoolWkRef!=='undefined') ? _gPoolWkRef : 1;
+                const _gWFrom = (typeof _gFromRef!=='undefined') ? _gFromRef : grStart;
+                const _gWBase = grammarBook ? getGrammarUrl(_gWFrom) : '';
+                const _gWTrainCell = (_gWTrain!==null) ? scoreCell(_gWTrain, `window.location.href='${_gWBase}&wscReview=${_gWWk}'`, '') : naCell();
+                const _gWExamCell = (_gWExam!==null) ? scoreCell(_gWExam, `window.location.href='${_gWBase}&wexReview=${_gWWk}'`, '') : naCell();
+                const _grammarWk = grammarBook
+                    ? `<td style="padding:6px;border:1px solid #E5E7EB;text-align:center;font-weight:600;color:#B45309">주간</td>
+                       <td style="padding:6px;border:1px solid #E5E7EB;text-align:center">${_gWTrainCell}</td>
+                       <td style="padding:6px;border:1px solid #E5E7EB;text-align:center">${_gWExamCell}</td>`
+                    : `<td colspan="3" style="padding:6px;border:1px solid #E5E7EB;text-align:center;color:var(--text3)">-</td>`;
+
+                // ── 단어 주간 점수 ── (deckId/주간범위 키)
+                let _vWTrain = null, _vWExam = null;
+                let _vWClick = '';
+                if(deck && (deck.days||[]).length>0){
+                    try{
+                        // 이번 주 단어 범위: 그 주 학습일들의 DAY 범위
+                        let _vFirstIdx = 0;
+                        const _vFirst = _wkLearns[0];
+                        for(let j=0;j<allSessions.length;j++){
+                            const as=allSessions[j];
+                            if(as.isWeeklyTest) continue;
+                            if(vocabStartDate && as.date < vocabStartDate) continue;
+                            if(_vFirst && as.date.getTime()===_vFirst.date.getTime()) break;
+                            _vFirstIdx++;
+                        }
+                        const _vDayStart = vocabStartDay + _vFirstIdx * vocabHomeworkPerDay;
+                        const _vWkDays = _wkLearns.length;
+                        const _vDayEnd = _vDayStart + _vWkDays * vocabHomeworkPerDay - 1;
+                        const _vwKey = vocabDeckId + '/' + _vDayStart + '_' + _vDayEnd;
+                        const _vwTrainRec = vcWTrainAll[_vwKey];
+                        const _vwExamRec = vcWExamAll[_vwKey];
+                        _vWTrain = _vwTrainRec ? (_vwTrainRec.bestScore ?? _vwTrainRec.score ?? null) : null;
+                        _vWExam = _vwExamRec ? (_vwExamRec.bestScore ?? _vwExamRec.score ?? null) : null;
+                        const _vFirstDayObj = deck.days[_vDayStart-1];
+                        const _vFirstDayId = _vFirstDayObj ? _vFirstDayObj.id : '';
+                        _vWClick = `'${vocabDeckId}','${_vFirstDayId}'`;
+                        var _vwDS=_vDayStart, _vwDE=_vDayEnd;
+                    }catch(e){}
+                }
+                const _vWTrainCell = (_vWTrain!==null) ? scoreCell(_vWTrain, `openVocabWeeklyExam(${_vWClick},'train',${typeof _vwDS!=='undefined'?_vwDS:0},${typeof _vwDE!=='undefined'?_vwDE:0})`, '') : naCell();
+                const _vWExamCell = (_vWExam!==null) ? scoreCell(_vWExam, `openVocabWeeklyExam(${_vWClick},'exam',${typeof _vwDS!=='undefined'?_vwDS:0},${typeof _vwDE!=='undefined'?_vwDE:0})`, '') : naCell();
+                const _vocabWk = (deck && (deck.days||[]).length>0)
+                    ? `<td style="padding:6px;border:1px solid #E5E7EB;text-align:center;font-weight:600;color:#B45309">주간</td>
+                       <td style="padding:6px;border:1px solid #E5E7EB;text-align:center">${_vWTrainCell}</td>
+                       <td style="padding:6px;border:1px solid #E5E7EB;text-align:center">${_vWExamCell}</td>`
+                    : `<td colspan="3" style="padding:6px;border:1px solid #E5E7EB;text-align:center;color:var(--text3)">-</td>`;
+
+                html += `<tr style="background:#FFFBEB">
+                    <td style="padding:8px;border:1px solid #E5E7EB;text-align:center;font-weight:700;white-space:nowrap;color:#B45309">${_wkDateStr}<br><span style="font-size:9px">🟠주간</span></td>
+                    ${_readingWk}
+                    ${_grammarWk}
+                    ${_vocabWk}
+                </tr>`;
+            }
+        }
     });
     
     html += `</tbody></table></div>
         <div style="margin-top:12px;font-size:11px;color:var(--text3);text-align:center">
-            💡 점수를 클릭하면 결과 페이지로 이동합니다. 리딩의 📋 아이콘은 Unit 통합 결과 페이지를 엽니다.
+            💡 점수를 클릭하면 결과 페이지로 이동합니다. 리딩의 📋 아이콘은 Unit 통합 결과 페이지를 엽니다.<br>
+            🟠 노란 행은 그 주의 주간평가(5·6단계) 점수입니다.
         </div>`;
     
     return html;
 }
 
-// 문법 셀프체크 결과 페이지 열기 (기존 결과 페이지가 있으면 사용, 없으면 alert)
+// 문법 셀프체크 결과 페이지 열기 — grammarwise 챕터 페이지의 셀프체크 리뷰(&scReview)로 이동.
+//   일정표 셀과 동일 패턴(getGrammarUrl + &scReview=챕터). 나모그는 챕터번호 그대로.
 function openGrammarSelfResult(bookName, unitNum){
-    // TODO: 실제 결과 페이지로 이동. 우선은 alert로 안내
-    alert(`📝 ${bookName} Chapter ${unitNum} 셀프체크 결과 페이지\n\n(결과 페이지 연결 작업 진행 중)`);
+    try{
+        var url = getGrammarUrl(unitNum) + '&scReview=' + unitNum;
+        window.location.href = url;
+    }catch(e){
+        alert('📝 결과 페이지를 여는 중 오류가 발생했습니다.');
+    }
 }
 function openGrammarExamResult(bookName, unitNum){
-    alert(`📝 ${bookName} Chapter ${unitNum} 실전평가 결과 페이지\n\n(결과 페이지 연결 작업 진행 중)`);
+    try{
+        var url = getGrammarUrl(unitNum) + '&examReview=' + unitNum;
+        window.location.href = url;
+    }catch(e){
+        alert('📝 결과 페이지를 여는 중 오류가 발생했습니다.');
+    }
 }
 
 // 리딩 Unit 통합 결과 페이지 (기존 함수 활용)
