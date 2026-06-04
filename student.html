@@ -1405,12 +1405,13 @@ function _readingStageComplete(stage){
             const arts=(getArticles()[book]||{})[uk];
             const artCount=(arts&&arts.articles)?arts.articles.length:1;
             sc=getUnitScores(book, uk, artCount);
-        }catch(e){ continue; } // 데이터 못 읽으면 그 unit은 건너뜀(과하게 막지 않음)
-        if(!sc) continue;
+        }catch(e){ continue; } // 읽기 자체가 에러난 경우만 건너뜀(과하게 막지 않음)
+        // sc===null/undefined 는 데이터가 "없는" 것 → 미완료로 봐야 함.
+        // (예전 if(!sc) continue; 는 신규/빈데이터 학생을 전부 통과로 오판했음)
         if(stage==='self'){
-            if(!sc.trainRec) return false;          // 셀프(훈련모드) 미완료
+            if(!sc||!sc.trainRec) return false;          // 셀프(훈련모드) 미완료
         } else if(stage==='exam'){
-            if(sc.exam===null||sc.exam===undefined) return false; // 실전 미응시
+            if(!sc||sc.exam===null||sc.exam===undefined) return false; // 실전 미응시
         }
     }
     return true;
