@@ -3355,13 +3355,13 @@ function renderFlowWeek(ctx){
         }
         let cta, onclick, locked=false, faded=false;
         if(mode==='self-active'){
-            cta='시작 →'; onclick=hw.onclick;
+            cta='시작 →'; onclick=(hw&&hw.onclick)||'';
         } else if(mode==='wtrain'){
-            cta='훈련 시작 →'; onclick=hw.wTrainClick||hw.onclick;
+            cta='훈련 시작 →'; onclick=(hw&&(hw.wTrainClick||hw.onclick))||'';
         } else if(mode==='wtrain-done'){
             cta='✓ 훈련 완료'; onclick=''; faded=true;
         } else if(mode==='wexam'){
-            cta='실전평가 →'; onclick=hw.wExamClick||hw.onclick;
+            cta='실전평가 →'; onclick=(hw&&(hw.wExamClick||hw.onclick))||'';
         } else if(mode==='wexam-done'){
             cta='✓ 완료'; onclick=''; faded=true;
         } else if(mode==='self-done'){
@@ -3369,7 +3369,7 @@ function renderFlowWeek(ctx){
         } else if(mode==='exam-locked'){
             cta='🔒 실전평가'; onclick=''; locked=true;
         } else if(mode==='exam-active'){
-            cta='실전평가 →'; onclick=hw.examOnclick||hw.onclick;
+            cta='실전평가 →'; onclick=(hw&&(hw.examOnclick||hw.onclick))||'';
         } else { // done
             cta='✓ 완료'; onclick=''; faded=true;
         }
