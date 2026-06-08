@@ -1360,7 +1360,7 @@ function _activeLearnDate(){
                     const arts=(getArticles()[book]||{})[uk];
                     const artCount=(arts&&arts.articles)?arts.articles.length:1;
                     const sc=getUnitScores(book, uk, artCount);
-                    examDone = !!sc && (sc.exam!==null && sc.exam!==undefined);
+                    examDone = !!sc && (sc.exam!==null);  // dashboard nextHomework와 동일 기준(실전 기록 존재)
                 }catch(e){ examDone=false; }
                 if(!examDone){ lastDate=new Date(ws.date); break; } // 가장 이른 미완료 학습일 = active
             }
