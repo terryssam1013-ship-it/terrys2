@@ -1334,6 +1334,45 @@ function _thisWeekLearnSessions(){
 //   (미래 학습일 — 아직 NEXT로 도달 안 한 수/금 등 — 까지 완료를 요구하면
 //    오늘치를 다 끝내도 NEXT가 안 열리는 버그가 생긴다.)
 //   리딩 미세팅이면 이번 주 마지막 학습일을 반환(=전체 검사, 과하게 막지 않음).
+// 🟢 [재귀 차단용] 학습일 순서 idx의 문법 실전(2·4단계) 완료 여부 — _activeLearnDate 전용.
+//   _grammarWeekUnits를 호출하지 않고 idx→unit을 직접 계산(그 함수는 _activeLearnDate를 부르므로 무한루프 방지).
+function _grammarLessonExamDone(idx){
+    try{
+        const s=getStudentData()||{};
+        const book=s.textbooks&&s.textbooks.grammar;
+        if(!book) return true;  // 문법 미세팅 → 막지 않음
+        const startPt=parseInt(s.startGrammarPoint)||1;
+        const isNamog=/namog|나모그/i.test(book);
+        const startUnit=isNamog?startPt:Math.ceil(startPt/4);
+        const u=startUnit+idx;
+        let recs=null;
+        try{ recs=getGrammarRecords(); }catch(e){ return true; }
+        if(!recs) return true;
+        const ex=recs.exams&&recs.exams[u];
+        const att=ex&&ex.attempts;
+        const n=Array.isArray(att)?att.length:(typeof att==='number'?att:0);
+        return !!ex&&(n>0||ex.adminCompleted);  // 실전 1회 이상 응시 or 어드민완료
+    }catch(e){ return true; }
+}
+// 🟢 [재귀 차단용] 학습일 순서 idx의 단어 실전 완료 여부 — _activeLearnDate 전용.
+function _vocabLessonExamDone(idx){
+    try{
+        const s=getStudentData()||{};
+        const deckId=s.textbooks&&s.textbooks.vocab;
+        if(!deckId) return true;  // 단어 미세팅 → 막지 않음
+        const hpd=Math.max(1,parseInt(s.vocabHomeworkPerDay)||1);
+        const startDay=Math.max(1,parseInt(s.startVocabDay)||1);
+        const vIdx=LS.g('vocab_index')||{};
+        const deck=vIdx[deckId];
+        const totalDays=deck&&deck.days?deck.days.length:0;
+        const dayStart=startDay+idx*hpd;
+        if(totalDays && dayStart>totalDays) return true; // 덱 범위 밖 → 막지 않음
+        const reAll=(()=>{try{return JSON.parse(RL_STORE.get(_vcKey('rl_vc_realexam'))||'{}');}catch(e){return {};}})();
+        const key=deckId+'/'+dayStart+'_'+hpd;
+        return !!reAll[key];  // 실전 기록 존재
+    }catch(e){ return true; }
+}
+
 function _activeLearnDate(){
     try{
         const week=_thisWeekLearnSessions();
@@ -1354,15 +1393,22 @@ function _activeLearnDate(){
                     if(new Date(ls.date).getTime()===new Date(ws.date).getTime()) break;
                     idx++;
                 }
+                // 🟢 한 학습일이 '지나간' 것으로 보려면 세 과목 모두 그날 실전(2·4단계)까지 끝나야 한다.
+                //   리딩 한 과목만 실전을 봐도 다음날로 넘기면 안 됨(세 과목이 함께 움직이는 규칙).
+                //   → 이 학습일에서 한 과목이라도 실전 미완료면 여기가 active(머무름).
                 const uk='unit'+(startUnit+idx);
-                let examDone=false;
+                let readingExamDone=false;
                 try{
                     const arts=(getArticles()[book]||{})[uk];
                     const artCount=(arts&&arts.articles)?arts.articles.length:1;
                     const sc=getUnitScores(book, uk, artCount);
-                    examDone = !!sc && (sc.exam!==null);  // dashboard nextHomework와 동일 기준(실전 기록 존재)
-                }catch(e){ examDone=false; }
-                if(!examDone){ lastDate=new Date(ws.date); break; } // 가장 이른 미완료 학습일 = active
+                    readingExamDone = !!sc && (sc.exam!==null);
+                }catch(e){ readingExamDone=false; }
+                // 문법·단어도 같은 학습일(idx) 실전 완료인지 — 학습일 순서(idx) 기준으로 판정
+                const grammarExamDone = _grammarLessonExamDone(idx);
+                const vocabExamDone   = _vocabLessonExamDone(idx);
+                const allExamDone = readingExamDone && grammarExamDone && vocabExamDone;
+                if(!allExamDone){ lastDate=new Date(ws.date); break; } // 한 과목이라도 미완 → 여기가 active
             }
             lastDate.setHours(0,0,0,0);
             return lastDate;
