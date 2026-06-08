@@ -2161,6 +2161,11 @@ function renderSchedule(s){
     let _flowPhaseRL='selfcheck';
     try{ const _fr=getFlowState(); if(_fr&&_fr.phase) _flowPhaseRL=_fr.phase; }catch(e){}
     const _holdOnExam = (_flowPhaseRL==='exam');
+    // 🟢 세 과목 기준 현재 진행 학습일(active). 리딩이 혼자 실전 보고 앞서가지 않도록,
+    //   active를 넘어가는 학습일에서는 currentIdx를 잡지 않고 active 학습일에 머문다.
+    //   (phase가 selfcheck여도 적용 — _holdOnExam만으로는 못 막는 케이스 보강)
+    let _activeRL=null;
+    try{ _activeRL=_activeLearnDate(); if(_activeRL) _activeRL.setHours(0,0,0,0); }catch(e){ _activeRL=null; }
     let currentIdx=-1;
     for(let i=0;i<sessions.length;i++){
         const sess=sessions[i];
@@ -2182,6 +2187,20 @@ function renderSchedule(s){
             const unit=ba[uk];
             if(unit&&(unit.articles||[]).length>0){
                 const sc=getUnitScores(bookName,uk,unit.articles.length);
+                // 🟢 active 가드: 이 학습일이 active(세 과목 현재 학습일)를 넘으면,
+                //   리딩 실전 여부와 무관하게 active 학습일에 머문다(혼자 전진 방지).
+                if(_activeRL){
+                    const _sd=new Date(sess.date); _sd.setHours(0,0,0,0);
+                    if(_sd.getTime()>_activeRL.getTime()){
+                        // active 학습일에서 멈추도록: active와 같은 날짜의 세션을 currentIdx로
+                        for(let j=0;j<sessions.length;j++){
+                            if(sessions[j].isWeeklyTest) continue;
+                            const _jd=new Date(sessions[j].date); _jd.setHours(0,0,0,0);
+                            if(_jd.getTime()===_activeRL.getTime()){ currentIdx=j; break; }
+                        }
+                        if(currentIdx>=0) break;
+                    }
+                }
                 // 셀프(훈련)는 했지만 실전 미완료 → 여기가 현재 숙제
                 if(sc.exam===null){currentIdx=i;break;}
                 // 실전까지 끝남 + flow가 exam 단계 + 셀프(trainRec) 기록 있음
