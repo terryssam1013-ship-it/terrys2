@@ -1383,7 +1383,13 @@ function _activeLearnDate(){
             let allLearn=[];
             try{ allLearn=buildAllSessions(s, addDays(getActiveWeekMonday(s),6)); }catch(e){ allLearn=[]; }
             const learnOnly=allLearn.filter(x=>!x.isWeeklyTest);
+            // flow가 'exam'이면 = NEXT(flowGoNextDay)를 아직 안 누른 상태.
+            //   이 경우 현재 학습일 실전을 다 끝내도 '다음 학습일로 전진하면 안 된다'.
+            //   (NEXT를 눌러야 phase가 selfcheck로 바뀌고 그때 다음날로 넘어감)
+            let _flowPhase='selfcheck';
+            try{ _flowPhase=(getFlowState()||{}).phase||'selfcheck'; }catch(e){}
             let lastDate=new Date(wk[wk.length-1].date);
+            let _lastCompleted=null; // 세 과목 실전까지 끝낸 '마지막' 학습일
             for(const ws of wk){
                 let idx=0;
                 for(const ls of learnOnly){
@@ -1402,6 +1408,13 @@ function _activeLearnDate(){
                 const vocabExamDone   = _vocabLessonExamDone(idx);
                 const allExamDone = readingExamDone && grammarExamDone && vocabExamDone;
                 if(!allExamDone){ lastDate=new Date(ws.date); break; }
+                _lastCompleted=new Date(ws.date); // 이 학습일은 세 과목 실전까지 완료
+            }
+            // 🟢 NEXT 게이트: phase가 exam이고, 완료한 마지막 학습일이 있으면 거기 머문다.
+            //   (NEXT 안 눌렀는데 다음 학습일로 자동 전진하는 버그 방지 — 박민성 케이스)
+            if(_flowPhase==='exam' && _lastCompleted){
+                _lastCompleted.setHours(0,0,0,0);
+                return _lastCompleted;
             }
             lastDate.setHours(0,0,0,0);
             return lastDate;
