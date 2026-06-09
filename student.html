@@ -4432,9 +4432,8 @@ function renderHorizontalProgress(s){
                 const self = (sc && sc.ssAll && typeof sc.ssAll.score === 'number') ? sc.ssAll.score : null;
                 const exam = sc?.exam ?? null;
                 // 점수 클릭 시 Unit 통합 결과 페이지로 이동 (셀프·실전 공통)
-                const _rOpen = `openUnitDetail('${uk}')`;
-                const _selfCell = (self!==null) ? scoreCell(self, _rOpen, '') : naCell();
-                const _examCell = (exam!==null) ? scoreCell(exam, _rOpen, '') : naCell();
+                const _selfCell = (self!==null) ? scoreCell(self, `openUnit('${uk}','self')`, '') : naCell();
+                const _examCell = (exam!==null) ? scoreCell(exam, `openUnit('${uk}','exam')`, '') : naCell();
                 readingHTML = `
                     <td style="padding:6px;border:1px solid #E5E7EB;text-align:center;font-weight:600">Unit ${readingUnit}</td>
                     <td style="padding:6px;border:1px solid #E5E7EB;text-align:center">${a1!==null?a1:naCell()}</td>
@@ -4944,14 +4943,18 @@ function viewUnit(s){
     // 카드 한 줄을 생성하는 헬퍼
     const renderStep=(opts)=>{
         const {key,num,title,subtitle,score,attempts,isDone,isLocked,isNext,onClick,detail,iconBg,iconColor}=opts;
-        const expandedNow=expanded===key;
+        // 누적현황에서 셀프/실전 점수 클릭으로 들어온 경우 해당 단계 결과 자동 펼침
+        //   focusStage: 'self'→train 카드, 'exam'→exam 카드
+        const _focus=state._unitFocusStage;
+        const _focusKey=_focus==='self'?'train':(_focus==='exam'?'exam':null);
+        const expandedNow=(expanded===key)||(_focusKey===key&&!!detail);
         // 점수가 있으면 (isDone 무관) 표시 — 통과 못해도 점수 보임
         const showScore=score!==null&&score!==undefined;
         // 도전 횟수 (재시도): 2회 이상부터 표시
         const showAttempts=typeof attempts==='number'&&attempts>=2;
         // 카드 본체 클릭 = 입장/재테스트 (이전 동작 유지)
         const cardClickJs=isLocked?'':(onClick||'');
-        return `<div class="step-card ${isDone?'done':isNext?'current':'locked'}" style="cursor:${isLocked?'not-allowed':'pointer'}" onclick="${cardClickJs}">
+        return `<div class="step-card ${isDone?'done':isNext?'current':'locked'}" data-step="${key}" style="cursor:${isLocked?'not-allowed':'pointer'}" onclick="${cardClickJs}">
             <div class="step-num" style="background:${iconBg};color:${iconColor}">${num}</div>
             <div style="flex:1;min-width:0">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
@@ -5044,7 +5047,7 @@ function viewUnit(s){
     </div>`;
 }
 
-function toggleUnitStep(key){state.expandedHistory=state.expandedHistory===key?null:key;render();}
+function toggleUnitStep(key){state._unitFocusStage=null;state.expandedHistory=state.expandedHistory===key?null:key;render();}
 
 /* 점수 계산 */
 function getUnitScores(bookName,unitKey,artCount){
@@ -6960,7 +6963,15 @@ function getOrCreateWeeklySet(force){
         if(saved&&saved.arrQs&&saved.grQs&&saved.wordQs6) return saved;
     }
     const set=buildWeeklySet();
-    LS.s(key,set);
+    // 🛡️ 안전장치: 문제가 하나라도 0개면(데이터 부족 등) 세트를 '저장하지 않는다'.
+    //   → 빈약한 세트가 영구 고정되는 사고 방지. 데이터 채운 뒤 다시 진입하면 정상 생성됨.
+    //   (저장은 안 하되, 이번 회차는 일단 만들어진 set으로 진행 — 화면이 멈추지 않도록)
+    const _ok = set.wordQs6&&set.wordQs6.length>0 && set.arrQs&&set.arrQs.length>0 && set.grQs&&set.grQs.length>0;
+    if(_ok){
+        LS.s(key,set);
+    } else {
+        console.warn('[주간 세트 미저장] 문제 부족 — 단어',set.wordQs6?set.wordQs6.length:0,'어순배열',set.arrQs?set.arrQs.length:0,'어법',set.grQs?set.grQs.length:0,'(데이터 보강 후 재진입 시 재생성)');
+    }
     return set;
 }
 // 🟢 5단계(훈련)용 단어 문제 — 6단계와 '같은 단어(selectedWords)', '형식만 재랜덤'.
@@ -7370,17 +7381,28 @@ function viewWeeklyResult(){
     const bookName=wd?.bookName||getStudentData()?.textbooks?.reading;
     const weekId=wd?.weekId;
     if(!weekId)return '<p>결과를 표시할 수 없습니다.</p>';
-    const rec=LS.g('weekly_'+uid+'_'+bookName+'_'+weekId);
-    if(!rec||!rec.examDone)return '<p>아직 응시하지 않은 시험입니다.</p>';
+    const recRaw=LS.g('weekly_'+uid+'_'+bookName+'_'+weekId);
     const we=state.weeklyExam; // 방금 응시 완료한 경우만 있음
+    const isTrain=!!(we&&we.isTrain);
+    if(!recRaw)return '<p>아직 응시하지 않은 시험입니다.</p>';
+    // train(5단계)/exam(6단계) 필드 매핑 — 결과 화면 공통 로직이 rec.score/parts/grade를 쓰도록 정규화
+    let rec;
+    if(isTrain){
+        if(!recRaw.trainDone)return '<p>아직 응시하지 않은 훈련입니다.</p>';
+        rec={...recRaw, score:recRaw.trainScore, grade:recRaw.trainGrade, parts:recRaw.trainParts, detail:recRaw.trainDetail, history:recRaw.trainHistory, attemptCount:recRaw.trainAttempts};
+    } else {
+        if(!recRaw.examDone)return '<p>아직 응시하지 않은 시험입니다.</p>';
+        rec=recRaw;
+    }
     const settings=getSettings();
     const wkSet=settings.weeklyTest;
     const gradeColor={A:'#10B981',B:'#F59E0B',C:'#EF4444'}[rec.grade];
     return `<div style="max-width:760px;margin:0 auto">
         <div class="flex flex-between mb-16">
-            <h2 style="margin:0">🟠 주간평가 결과</h2>
+            <h2 style="margin:0">🟠 주간평가 ${isTrain?'훈련 결과 <span style="font-size:12px;color:#F97316;font-weight:700">(실전 미리풀기)</span>':'결과'}</h2>
             <button class="btn-ghost" onclick="state.view='dashboard';state.weeklyExam=null;render()">← 일정표로</button>
         </div>
+        ${isTrain?`<div style="background:#FFF7ED;border-left:3px solid #F97316;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:13px;color:#9A3412">📌 훈련(미리풀기) 결과입니다. ${rec.score>=80?'통과! 실전 시험을 보세요.':(rec.attemptCount>=2?'재테스트 완료 — 실전 시험으로 넘어갑니다.':'80점 미만이라 재테스트가 필요합니다 (동일 문제).')}</div>`:''}
         <div class="card" style="padding:36px 28px;text-align:center;border:2px solid ${gradeColor};background:linear-gradient(135deg,#FFF7ED,#FFEDD5)">
             <div style="font-size:14px;color:var(--text3);font-weight:600">${escU(bookName)} · ${weekId} 주간평가</div>
             <div style="font-size:64px;font-weight:800;margin:14px 0 4px;color:${gradeColor}">${rec.grade}</div>
@@ -7405,24 +7427,29 @@ function viewWeeklyResult(){
             </div>
             <div style="margin-top:24px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
                 <button class="btn-primary" onclick="state.view='weeklyReview';render()" style="background:#F97316">📋 오답 확인하기</button>
-                <button class="btn-ghost" onclick="retakeWeeklyExam()" style="border:1.5px solid #F97316;color:#9A3412">🔄 재시험 보기</button>
+                <button class="btn-ghost" onclick="retakeWeeklyExam(${isTrain})" style="border:1.5px solid #F97316;color:#9A3412">🔄 ${isTrain?'재테스트 (동일 문제)':'재시험 보기'}</button>
             </div>
         </div>
         ${rec.history&&rec.history.length>1?renderWeeklyHistory(rec.history,rec.score,rec.grade):''}
     </div>`;
 }
 
-// 재시험 — 기존 detail 보존하고 새로 시험 시작
-function retakeWeeklyExam(){
+// 재시험 — train(5단계)은 동일 문제 재테스트, exam(6단계)은 기존
+function retakeWeeklyExam(isTrain){
     const wd=state.weeklyData;
     const uid=getUser().id;
-    const bookName=wd.bookName;
     const weekId=wd.weekId;
-    if(!confirm('재시험을 보시겠습니까?\n\n• 새로운 문제로 다시 출제됩니다\n• 이전 점수는 응시 기록(히스토리)으로 보존됩니다\n• 최신 점수가 일정표에 표시됩니다'))return;
-    // 이어풀기 inprog 정리 (새 시험 시작)
+    if(isTrain){
+        if(!confirm('재테스트를 보시겠습니까?\n\n• 동일한 문제로 다시 출제됩니다\n• 점수는 기록으로 보존됩니다'))return;
+        LS.del('inprog_'+uid+'_weekly_'+weekId+'_train');
+        state.weeklyExam=null;
+        startWeeklyExam(true);  // 동일 세트 → 동일 문제
+        return;
+    }
+    if(!confirm('재시험을 보시겠습니까?\n\n• 동일한 문제로 다시 출제됩니다 (세트 고정)\n• 이전 점수는 응시 기록(히스토리)으로 보존됩니다\n• 최신 점수가 일정표에 표시됩니다'))return;
     LS.del('inprog_'+uid+'_weekly_'+weekId+'_exam');
     state.weeklyExam=null;
-    startWeeklyExam();
+    startWeeklyExam(false);
 }
 
 // 응시 히스토리 렌더링
@@ -7453,7 +7480,10 @@ function viewWeeklyReview(){
     const bookName=wd?.bookName||getStudentData()?.textbooks?.reading;
     const weekId=wd?.weekId;
     if(!weekId)return '<p>리뷰할 시험이 없습니다.</p>';
-    const rec=LS.g('weekly_'+uid+'_'+bookName+'_'+weekId);
+    const recRaw=LS.g('weekly_'+uid+'_'+bookName+'_'+weekId);
+    const we=state.weeklyExam;
+    const isTrain=!!(we&&we.isTrain);
+    const rec=isTrain?{detail:recRaw&&recRaw.trainDetail}:recRaw;
     if(!rec||!rec.detail)return '<p>리뷰할 시험 데이터가 없습니다.</p>';
     
     const sectionBlock=(title,detail)=>{
@@ -8467,7 +8497,9 @@ function getUnitDone(book,unit){return LS.g('done_'+getUser().id+'_'+book+'_'+un
 function markDone(book,unit,idx){const d=getUnitDone(book,unit);if(!d.includes(idx)){d.push(idx);LS.s('done_'+getUser().id+'_'+book+'_'+unit,d);}}
 function getMyProgress(){return (LS.g('progress')||{})[getUser().id]||[];}
 
-function openUnit(uk){state.unit=uk;state.view='unit';render();}
+function openUnit(uk,focusStage){state.unit=uk;state.view='unit';state._unitFocusStage=focusStage||null;render();
+    if(focusStage){const _k=focusStage==='self'?'train':focusStage;setTimeout(()=>{const el=document.querySelector(`[data-step="${_k}"]`);if(el)el.scrollIntoView({behavior:'smooth',block:'center'});},120);}
+}
 
 // 단어 학습 기록 보기 — 셀프체크 통과 후 점수 클릭 시
 function openVocabSummary(deckId,startDay,homeworkPerDay){
