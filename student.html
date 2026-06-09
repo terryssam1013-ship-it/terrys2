@@ -1328,6 +1328,89 @@ function _thisWeekLearnSessions(){
     });
 }
 
+// 🟢 [재귀 차단용] 학습일 순서 idx의 문법 실전 완료 여부 — _activeLearnDate 전용.
+function _grammarLessonExamDone(idx){
+    try{
+        const s=getStudentData()||{};
+        const book=s.textbooks&&s.textbooks.grammar;
+        if(!book) return true;
+        const startPt=parseInt(s.startGrammarPoint)||1;
+        const isNamog=/namog|나모그/i.test(book);
+        const startUnit=isNamog?startPt:Math.ceil(startPt/4);
+        const u=startUnit+idx;
+        let recs=null;
+        try{ recs=getGrammarRecords(); }catch(e){ return true; }
+        if(!recs) return true;
+        const ex=recs.exams&&recs.exams[u];
+        const att=ex&&ex.attempts;
+        const n=Array.isArray(att)?att.length:(typeof att==='number'?att:0);
+        return !!ex&&(n>0||ex.adminCompleted);
+    }catch(e){ return true; }
+}
+// 🟢 [재귀 차단용] 학습일 순서 idx의 단어 실전 완료 여부 — _activeLearnDate 전용.
+function _vocabLessonExamDone(idx){
+    try{
+        const s=getStudentData()||{};
+        const deckId=s.textbooks&&s.textbooks.vocab;
+        if(!deckId) return true;
+        const hpd=Math.max(1,parseInt(s.vocabHomeworkPerDay)||1);
+        const startDay=Math.max(1,parseInt(s.startVocabDay)||1);
+        const vIdx=LS.g('vocab_index')||{};
+        const deck=vIdx[deckId];
+        const totalDays=deck&&deck.days?deck.days.length:0;
+        const dayStart=startDay+idx*hpd;
+        if(totalDays && dayStart>totalDays) return true;
+        const reAll=(()=>{try{return JSON.parse(RL_STORE.get(_vcKey('rl_vc_realexam'))||'{}');}catch(e){return {};}})();
+        const key=deckId+'/'+dayStart+'_'+hpd;
+        return !!reAll[key];
+    }catch(e){ return true; }
+}
+
+// 🟢 현재 '진행 중'인 학습일(active)의 날짜를 반환.
+//   한 학습일이 '지나간' 것으로 보려면 세 과목 모두 그날 실전(2·4단계)까지 끝나야 한다.
+//   리딩 한 과목만 실전을 봐도(또는 셀프만 끝나도) 다음날로 넘기지 않음.
+//   → 미래 학습일(아직 NEXT로 도달 안 한 수/목/금 등)까지 완료를 요구하면
+//     오늘치를 다 끝내도 NEXT/실전이 안 열리는 버그가 생긴다.
+function _activeLearnDate(){
+    try{
+        const week=_thisWeekLearnSessions();
+        if(!week||week.length===0) return null;
+        const s=getStudentData()||{};
+        const book=s.textbooks&&s.textbooks.reading;
+        const startUnit=parseInt(s.startUnit)||1;
+        const wk=week.slice().sort((a,b)=>new Date(a.date)-new Date(b.date));
+        if(book){
+            let allLearn=[];
+            try{ allLearn=buildAllSessions(s, addDays(getActiveWeekMonday(s),6)); }catch(e){ allLearn=[]; }
+            const learnOnly=allLearn.filter(x=>!x.isWeeklyTest);
+            let lastDate=new Date(wk[wk.length-1].date);
+            for(const ws of wk){
+                let idx=0;
+                for(const ls of learnOnly){
+                    if(new Date(ls.date).getTime()===new Date(ws.date).getTime()) break;
+                    idx++;
+                }
+                const uk='unit'+(startUnit+idx);
+                let readingExamDone=false;
+                try{
+                    const arts=(getArticles()[book]||{})[uk];
+                    const artCount=(arts&&arts.articles)?arts.articles.length:1;
+                    const sc=getUnitScores(book, uk, artCount);
+                    readingExamDone = !!sc && (sc.exam!==null);
+                }catch(e){ readingExamDone=false; }
+                const grammarExamDone = _grammarLessonExamDone(idx);
+                const vocabExamDone   = _vocabLessonExamDone(idx);
+                const allExamDone = readingExamDone && grammarExamDone && vocabExamDone;
+                if(!allExamDone){ lastDate=new Date(ws.date); break; }
+            }
+            lastDate.setHours(0,0,0,0);
+            return lastDate;
+        }
+        const d=new Date(wk[wk.length-1].date); d.setHours(0,0,0,0);
+        return d;
+    }catch(e){ return null; }
+}
+
 // 단어: 이번 주 각 학습일의 dayStart 목록
 function _vocabWeekDayStarts(){
     const s=getStudentData()||{};
@@ -1345,7 +1428,12 @@ function _vocabWeekDayStarts(){
     // buildAllSessions는 미래까지 필요 → 충분히 길게
     try{ allLearn=buildAllSessions(s, addDays(getActiveWeekMonday(s),6)); }catch(e){ allLearn=[]; }
     const learnOnly=allLearn.filter(x=>!x.isWeeklyTest && (!vStartDate || new Date(x.date)>=vStartDate));
-    const weekSessions=_thisWeekLearnSessions().filter(x=>!vStartDate || new Date(x.date)>=vStartDate);
+    const _act=_activeLearnDate();
+    const weekSessions=_thisWeekLearnSessions().filter(x=>{
+        if(vStartDate && new Date(x.date)<vStartDate) return false;
+        if(_act){ const d=new Date(x.date); d.setHours(0,0,0,0); if(d.getTime()>_act.getTime()) return false; }
+        return true;
+    });
     const starts=[];
     weekSessions.forEach(ws=>{
         let lessonIdx=0;
@@ -1394,7 +1482,12 @@ function _readingWeekUnitKeys(){
     let allLearn=[];
     try{ allLearn=buildAllSessions(s, addDays(getActiveWeekMonday(s),6)); }catch(e){ allLearn=[]; }
     const learnOnly=allLearn.filter(x=>!x.isWeeklyTest);
-    const weekSessions=_thisWeekLearnSessions();
+    const _act=_activeLearnDate();
+    const weekSessions=_thisWeekLearnSessions().filter(ws=>{
+        if(!_act) return true;
+        const d=new Date(ws.date); d.setHours(0,0,0,0);
+        return d.getTime()<=_act.getTime();
+    });
     const unitKeys=[];
     weekSessions.forEach(ws=>{
         let idx=0;
@@ -1440,7 +1533,12 @@ function _grammarWeekUnits(){
     let allLearn=[];
     try{ allLearn=buildAllSessions(s, addDays(getActiveWeekMonday(s),6)); }catch(e){ allLearn=[]; }
     const learnOnly=allLearn.filter(x=>!x.isWeeklyTest);
-    const weekSessions=_thisWeekLearnSessions();
+    const _act=_activeLearnDate();
+    const weekSessions=_thisWeekLearnSessions().filter(ws=>{
+        if(!_act) return true;
+        const d=new Date(ws.date); d.setHours(0,0,0,0);
+        return d.getTime()<=_act.getTime();
+    });
     const units=[];
     weekSessions.forEach(ws=>{
         let idx=0;
@@ -2052,6 +2150,10 @@ function renderSchedule(s){
     let _flowPhaseRL='selfcheck';
     try{ const _fr=getFlowState(); if(_fr&&_fr.phase) _flowPhaseRL=_fr.phase; }catch(e){}
     const _holdOnExam = (_flowPhaseRL==='exam');
+    // 🟢 세 과목 기준 현재 진행 학습일(active). 리딩이 혼자 실전 보고 앞서가지 않도록,
+    //   active를 넘는 학습일에서는 currentIdx를 잡지 않고 active 학습일에 머문다.
+    let _activeRL=null;
+    try{ _activeRL=_activeLearnDate(); if(_activeRL) _activeRL.setHours(0,0,0,0); }catch(e){ _activeRL=null; }
     let currentIdx=-1;
     for(let i=0;i<sessions.length;i++){
         const sess=sessions[i];
@@ -2073,6 +2175,18 @@ function renderSchedule(s){
             const unit=ba[uk];
             if(unit&&(unit.articles||[]).length>0){
                 const sc=getUnitScores(bookName,uk,unit.articles.length);
+                // 🟢 active 가드: 이 학습일이 active를 넘으면 active 학습일에 머문다(혼자 전진 방지).
+                if(_activeRL){
+                    const _sd=new Date(sess.date); _sd.setHours(0,0,0,0);
+                    if(_sd.getTime()>_activeRL.getTime()){
+                        for(let j=0;j<sessions.length;j++){
+                            if(sessions[j].isWeeklyTest) continue;
+                            const _jd=new Date(sessions[j].date); _jd.setHours(0,0,0,0);
+                            if(_jd.getTime()===_activeRL.getTime()){ currentIdx=j; break; }
+                        }
+                        if(currentIdx>=0) break;
+                    }
+                }
                 // 셀프(훈련)는 했지만 실전 미완료 → 여기가 현재 숙제
                 if(sc.exam===null){currentIdx=i;break;}
                 // 실전까지 끝남 + flow가 exam 단계 + 셀프(trainRec) 기록 있음
