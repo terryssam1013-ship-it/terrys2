@@ -452,6 +452,9 @@ function _syncKeyType(k){
     // active_week: 이제 학생별 키(rl_active_week_<sid>). 다른 진도 키처럼 통째 동기화.
     if(/^rl_active_week_/.test(k)) return 'uid-prefixed';
     if(k === 'rl_active_week') return 'skip'; // 옛 공용 키: 동기화하지 않음(마이그레이션으로 학생키로 이전됨)
+    // 🟢 flow(셀프/실전 단계) + dayIndex(새 진도) — 학생별 키. 어드민 단계조정이 학생에 반영되려면 동기화 필수.
+    if(/^rl_flow_/.test(k)) return 'uid-prefixed';
+    if(/^rl_dayindex_/.test(k)) return 'uid-prefixed';
     return 'skip';
 }
 
@@ -2068,7 +2071,8 @@ function getWeekMonday(d){
 function _activeWeekKey(){
     const base='rl_active_week';
     try{
-        if(typeof isPreview==='function' && isPreview()){
+        // 🟠 구간점프(어드민) 중에는 미리보기여도 실제 학생 키 → Firebase 반영
+        if(!_forceRealVcKey && typeof isPreview==='function' && isPreview()){
             const pid=getPreviewId();
             if(pid) return base.replace(/^rl_/, 'rl_pv_'+pid+'_'); // rl_pv_<pid>_active_week
         }
@@ -3761,7 +3765,11 @@ function adminFlowNextStep(){
             setTimeout(()=>{ try{ advanceWeek(); }catch(e){} }, 60);
         }
     }catch(e){ alert('단계 이동 중 오류: '+e.message); }
-    finally{ setTimeout(()=>{ _forceRealVcKey=false; }, 200); }
+    finally{ setTimeout(()=>{
+        // 🟢 변경된 진도(active_week/flow/dayindex/점수)를 학생 폰으로 push
+        try{ if(typeof syncUpLocalState==='function') syncUpLocalState(); }catch(e){}
+        _forceRealVcKey=false;
+    }, 300); }
 }
 
 function adminFlowPrevStep(){
@@ -3799,7 +3807,11 @@ function adminFlowPrevStep(){
         }
         render();
     }catch(e){ alert('되돌리기 중 오류: '+e.message); }
-    finally{ setTimeout(()=>{ _forceRealVcKey=false; }, 200); }
+    finally{ setTimeout(()=>{
+        // 🟢 변경된 진도(active_week/flow/dayindex/점수)를 학생 폰으로 push
+        try{ if(typeof syncUpLocalState==='function') syncUpLocalState(); }catch(e){}
+        _forceRealVcKey=false;
+    }, 300); }
 }
 
 // 특정 과목의 주간평가 현재 단계 기록 삭제 (kind: 'wexam' 실전 | 'wtrain' 훈련)
