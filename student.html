@@ -1382,10 +1382,20 @@ function _vocabLessonExamDone(idx){
    dayIndex = 시작일부터 센 '몇 번째 학습일인가' (0-based, 주간평가 제외).
    USE_NEW_PROGRESS=false 이면 기존 _activeLearnDate(점수 추측) 100% 그대로.
    ═══════════════════════════════════════════════════════════════ */
-// 🚩 전환 플래그. 평소 OFF(실제 학생 안전). URL에 ?newprogress=1 붙이면 ON (테스트 전용).
-//   검증 끝나면 이 줄을 `const USE_NEW_PROGRESS = true;`로 바꿔 전체 적용.
+// 🚩 전환 플래그. 평소 OFF(실제 학생 안전).
+//   ?newprogress=1 로 켜면 localStorage에 저장돼 계속 유지 (탭이동/버튼클릭에도 안 꺼짐).
+//   ?newprogress=0 으로 끄기. 검증 끝나면 이 줄을 `const USE_NEW_PROGRESS = true;`로.
 const USE_NEW_PROGRESS = (function(){
-    try{ return /[?&]newprogress=1/.test(location.search); }catch(e){ return false; }
+    try{
+        const m=location.search.match(/[?&]newprogress=([01])/);
+        if(m){ // URL에 명시 → 저장하고 그 값 사용
+            const on=m[1]==='1';
+            try{ localStorage.setItem('_np_flag', on?'1':'0'); }catch(e){}
+            return on;
+        }
+        // URL에 없으면 저장된 값 사용
+        return localStorage.getItem('_np_flag')==='1';
+    }catch(e){ return false; }
 })();
 
 // dayIndex 저장 키 — active_week와 동일한 학생별 분리 레이어.
