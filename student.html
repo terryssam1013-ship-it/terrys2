@@ -1385,30 +1385,31 @@ function _vocabLessonExamDone(idx){
    USE_NEW_PROGRESS=false 이면 기존 _activeLearnDate(점수 추측) 100% 그대로.
    ═══════════════════════════════════════════════════════════════ */
 // 🚩 전환 플래그. 평소 OFF(실제 학생 안전).
-//   ?newprogress=1 로 켜면 localStorage에 저장돼 계속 유지 (탭이동/버튼클릭에도 안 꺼짐).
-//   ?newprogress=0 으로 끄기. 검증 끝나면 이 줄을 `const USE_NEW_PROGRESS = true;`로.
+//   ?newprogress=1 로 켜면 localStorage에 저장돼 계속 유지.
+//   ⚠️ 실제 학생(아래 _REAL_STUDENTS)은 어떤 경우에도 무조건 OFF — dayIndex 미마이그레이션 상태라 켜면 진도 깨짐.
+//   검증 끝나고 마이그레이션 후 이 목록을 비우거나 전체 true로 전환.
+const _REAL_STUDENTS = ['mbest0601','mbest0602','mbest0603','mbest0604'];
 const USE_NEW_PROGRESS = (function(){
     try{
+        // 실제 학생이면 무조건 OFF (localStorage/URL 무관)
+        try{
+            const sid = (getPreviewId&&getPreviewId()) || (JSON.parse(RL_STORE.get('rl_current_user')||'{}').id);
+            if(sid && _REAL_STUDENTS.indexOf(sid)>=0) return false;
+        }catch(e){}
         const m=location.search.match(/[?&]newprogress=([01])/);
-        if(m){ // URL에 명시 → 저장하고 그 값 사용
+        if(m){
             const on=m[1]==='1';
             try{ localStorage.setItem('_np_flag', on?'1':'0'); }catch(e){}
             return on;
         }
-        // URL에 없으면 저장된 값 사용
         return localStorage.getItem('_np_flag')==='1';
     }catch(e){ return false; }
 })();
 
-// dayIndex 저장 키 — active_week와 동일한 학생별 분리 레이어.
+// dayIndex 저장 키 — 진도 위치(문제풀이 답 아님)이므로 항상 실제 학생 키 사용.
+//   active_week와 동일 원리: 미리보기(뷰어)도 학생 실제 진도를 보고/움직여야 동기화됨.
 function _dayIndexKey(){
     const base='rl_dayindex';
-    try{
-        if(typeof isPreview==='function' && isPreview()){
-            const pid=getPreviewId();
-            if(pid) return 'rl_pv_'+pid+'_dayindex';
-        }
-    }catch(e){}
     try{ const u=getUser(); if(u&&u.id) return base+'_'+u.id; }catch(e){}
     return base;
 }
@@ -2248,6 +2249,22 @@ function renderSchedule(s){
     let _activeRL=null;
     try{ _activeRL=_activeLearnDate(); if(_activeRL) _activeRL.setHours(0,0,0,0); }catch(e){ _activeRL=null; }
     let currentIdx=-1;
+    // 🟢 새 진도(dayIndex) ON: 리딩 카드도 dayIndex가 가리키는 학습일로 고정.
+    //   (문법 curUnit=_startGrammarUnit+dayIndex 와 동일 순번 → 리딩·문법·단어 통일)
+    if(typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS){
+        try{
+            const _di=getDayIndex();
+            const _learns=sessions.filter(x=>!x.isWeeklyTest);
+            const _target=_learns[_di];   // dayIndex번째 학습일
+            if(_target){
+                for(let i=0;i<sessions.length;i++){
+                    if(!sessions[i].isWeeklyTest && sessions[i].date.getTime()===_target.date.getTime()){ currentIdx=i; break; }
+                }
+            }
+            console.log('[리딩/dayIndex] dayIndex:',_di,'→ currentIdx:',currentIdx);
+        }catch(e){ console.warn('[리딩/dayIndex] 실패',e); }
+    }
+    if(currentIdx===-1)
     for(let i=0;i<sessions.length;i++){
         const sess=sessions[i];
         if(sess.isWeeklyTest){
