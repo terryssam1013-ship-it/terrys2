@@ -943,8 +943,10 @@ function _vcKey(base){
     // base 예: 'rl_vc_selfcheck', 'rl_vc_realexam', 'rl_vc_daycheck',
     //          'rl_vc_weeklyexam_train', 'rl_vc_weeklyexam_exam'
     try{
-        // 구간 점프 중에는 미리보기여도 실제 학생 키 사용 (학생 계정 반영)
-        if(!_forceRealVcKey && typeof isPreview==='function' && isPreview()){
+        // 🟢 dayIndex ON 또는 구간점프 중에는 미리보기여도 '실제 학생 키' 사용.
+        //   → 미리보기(뷰어)가 단어 점수를 학생 실제값 그대로 표시(격리 0점/빈칸 불일치 해소).
+        const _np=(typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS);
+        if(!_forceRealVcKey && !_np && typeof isPreview==='function' && isPreview()){
             const pid=getPreviewId();
             if(pid){
                 // rl_vc_selfcheck → rl_pv_<pid>_vc_selfcheck (미리보기 격리)
@@ -3788,15 +3790,19 @@ function adminFlowNextStep(){
                 setTimeout(()=>{ try{ flowWeeklyNextWeek(); }catch(e){} }, 60);  // 6→다음주
             }
         } else if(ph==='selfcheck'){
-            // 셀프 안 끝난 과목만 0점 완료 (이미 한 과목은 selfDoneFn이 보존). → flowCompleteHomework(실전 단계로)
+            // 셀프 안 끝난 과목 0점 완료 (이미 한 과목은 selfDoneFn 내부에서 보존). → flowCompleteHomework
+            //   🟢 dayIndex ON: 세 과목 st가 통일돼 있으므로 st 조건 없이 전부 처리(리딩 누락 방지).
+            const _np=(typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS);
             subs.forEach(s=>{
-                if(s.st==='self' && s.selfDoneFn){ try{ _runFlowFn(s.selfDoneFn); }catch(e){console.warn('셀프완료 실패',s.key,e);} }
+                if((_np || s.st==='self') && s.selfDoneFn){ try{ _runFlowFn(s.selfDoneFn); }catch(e){console.warn('셀프완료 실패',s.key,e);} }
             });
             setTimeout(()=>{ try{ flowCompleteHomework(); }catch(e){} }, 60);
         } else if(ph==='exam'){
-            // 실전 안 끝난 과목만 0점 완료 → flowGoNextDay(다음 학습일 셀프로)
+            // 실전 안 끝난 과목 0점 완료 → flowGoNextDay(다음 학습일 셀프로)
+            //   🟢 dayIndex ON: 세 과목 전부 실전 0점 처리.
+            const _np=(typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS);
             subs.forEach(s=>{
-                if(s.st==='exam' && s.examDoneFn){ try{ _runFlowFn(s.examDoneFn); }catch(e){console.warn('실전완료 실패',s.key,e);} }
+                if((_np || s.st==='exam') && s.examDoneFn){ try{ _runFlowFn(s.examDoneFn); }catch(e){console.warn('실전완료 실패',s.key,e);} }
                 else if(s.st==='self' && s.selfDoneFn){ try{ _runFlowFn(s.selfDoneFn); }catch(e){} }
             });
             setTimeout(()=>{ try{ flowGoNextDay(); }catch(e){} }, 60);
