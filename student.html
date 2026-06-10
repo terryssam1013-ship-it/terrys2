@@ -4686,8 +4686,13 @@ function renderHorizontalProgress(s){
                 const a1 = sc?.articles?.[0] ?? null;
                 const a2 = sc?.articles?.[1] ?? null;
                 const a3 = sc?.articles?.[2] ?? null;
-                // 셀프 = 훈련 마지막 단계인 '문장 셀프체크(ssAll)' 점수만 표시 (훈련 전체 평균 아님)
-                const self = (sc && sc.ssAll && typeof sc.ssAll.score === 'number') ? sc.ssAll.score : null;
+                // 셀프 = 훈련 마지막 단계인 '문장 셀프체크(ssAll)' 점수.
+                //   ssAll 없지만 셀프 완료기록(trainRec)이 있으면 그 점수(어드민 0점 처리 포함) 표시.
+                let self = (sc && sc.ssAll && typeof sc.ssAll.score === 'number') ? sc.ssAll.score : null;
+                if(self===null && sc && sc.trainRec){
+                    self = (typeof sc.trainRec.score==='number') ? sc.trainRec.score
+                         : (sc.trainTotal!==null ? sc.trainTotal : 0);
+                }
                 const exam = sc?.exam ?? null;
                 // 점수 클릭 시 Unit 통합 결과 페이지로 이동 (셀프·실전 공통)
                 const _selfCell = (self!==null) ? scoreCell(self, `openUnit('${uk}','self')`, '') : naCell();
