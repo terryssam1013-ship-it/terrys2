@@ -3482,6 +3482,19 @@ function renderFlowWeek(ctx){
         _hasVocab   ? {key:'vocab',   name:'📚 단어', hw:vocabHW,   color:colors.vocab,   st:classify(vocabHW)} : null,
     ].filter(Boolean);
 
+    // 🟢 새 진도(dayIndex) ON: 세 과목의 단계(st)를 공통 flow.phase로 통일.
+    //   점수 기반 classify가 과목마다 self/exam을 다르게 잡던 갈라짐을 차단.
+    //   (selfcheck → 세 과목 self / exam → 세 과목 exam). 주간평가(weekly)는 제외.
+    if(typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS){
+        try{
+            const _ph=(flow&&flow.phase)||'selfcheck';
+            subjects.forEach(x=>{
+                if(x.st==='weekly') return;            // 주간평가는 weeklyStage로 따로 처리
+                x.st = (_ph==='exam') ? 'exam' : 'self';
+            });
+        }catch(e){ console.warn('[dayIndex] 단계통일 실패',e); }
+    }
+
     // 🛡️ 안전장치(전 과목): '데이터(점수) 없이 완료'로 분류되는 것을 차단.
     //   classify(hw)는 hw=null이면 'done'을 반환하는데, hw=null은 "정상완료"일 수도
     //   "데이터 없음"일 수도 있다. 완료로 분류된 과목에 대해 이번 주 실제 학습
@@ -3499,6 +3512,8 @@ function renderFlowWeek(ctx){
     }
     (function _guardSubjectCompletion(){
         if(isPreview()) return;  // 미리보기(어드민 점검)는 강등 안 함 — 단계점프 흐름 확인용
+        // 🟢 dayIndex ON: 단계는 flow.phase로 이미 통일됨 → 점수 기반 강등 건너뜀(통일 유지)
+        if(typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS) return;
         subjects.forEach(x=>{
             if(x.st==='self'||x.st==='weekly') return;    // 진행중/주간은 대상 아님
             if(x.st==='exam'){
@@ -3527,7 +3542,8 @@ function renderFlowWeek(ctx){
     // 🔧 phase 자동 보정: 진도는 점수 기반으로 자동 전진하는데 phase(rl_flow)는 [다음날] 눌러야 바뀜.
     //   → 새 학습일로 넘어왔는데 phase가 이전 'exam'에 멈춰있으면, 리딩이 셀프 전인데 실전평가가 열리는 버그 발생.
     //   보정 규칙: 셀프체크가 아직 안 끝난 과목('self')이 하나라도 있으면, 아직 셀프체크 단계이므로 phase를 selfcheck로 교정.
-    if(flow.phase==='exam'){
+    //   ⚠️ dayIndex ON: 단계는 flow.phase가 단일 진실 → 역방향 보정 건너뜀(이미 phase로 st 통일했음).
+    if(flow.phase==='exam' && !(typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS)){
         const _anySelfPending = subjects.some(x=>x.st==='self');
         if(_anySelfPending){
             flow.phase='selfcheck';
