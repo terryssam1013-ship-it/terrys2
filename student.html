@@ -2460,7 +2460,19 @@ function renderSchedule(s){
         const curPt=parseInt(getCurrentGrammarPoint()||_startGrammarPt||'1');
         // 나모그: P=Chapter, 문마중: 4P=1Unit
         let curUnit=_isNamogRow?curPt:Math.ceil(curPt/4);
-        // 실전 '완료'(=진도 전진 자격) 판정: 재시험 프리패스 규칙 통일(_recIsPassed).
+        // 🟢 새 진도(dayIndex) ON: 문법도 점수 무시하고 dayIndex 순번을 따른다.
+        //   (리딩 startUnit+dayIndex / 단어 startVocabDay+dayIndex 와 동일 순번 → 세 과목 통일)
+        //   점수 기반 curUnit 계산(아래)을 건너뛰어 '문법만 앞서가는' 갈라짐을 원천 차단.
+        if(typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS){
+            try{
+                const _di=getDayIndex();
+                curUnit=_startGrammarUnit+_di;
+                for(let i=0;i<sessions.length;i++){ if(sessGrammarUnit[i]===curUnit){grammarNextRowIdx=i;break;} }
+                console.log('[문법/dayIndex] dayIndex:',_di,'→ curUnit:',curUnit,'rowIdx:',grammarNextRowIdx);
+            }catch(e){ console.warn('[문법/dayIndex] 실패',e); }
+        }
+        if(!(typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS)){
+        // ── 이하 기존 점수 기반 계산 (dayIndex OFF일 때만) ──
         //   80점 이상 OR 재시험 1회 포함 2회 시도 OR 어드민완료 = 완료.
         //   1회 시도 후 미통과(재시험 전)인 실전만 '미완료'로 둬서 전진 안 시킴.
         const _gExamCompleted = _recIsPassed;
@@ -2512,6 +2524,7 @@ function renderSchedule(s){
             const hasEx=exD?.attempts?.length>0;
             if(hasSc&&!hasEx){curUnit=u;break;} // 셀프 기록 있고 실전 안 봄 → 여기 멈춤(그 Unit이 이번 실전 숙제)
         }
+        } // ── 점수 기반 계산 끝 (dayIndex OFF일 때만) ──
         // 학습일 매칭 시도
         console.log('[문법] curUnit최종:',curUnit,'sessGrammarUnit:',JSON.stringify(sessGrammarUnit));
         for(let i=0;i<sessions.length;i++){
