@@ -2070,16 +2070,12 @@ function getWeekMonday(d){
 // 이제 학생ID를 붙여 학생마다 따로 저장한다. 미리보기는 _vcKey와 동일하게 격리.
 function _activeWeekKey(){
     const base='rl_active_week';
-    try{
-        // 🟠 구간점프(어드민) 중에는 미리보기여도 실제 학생 키 → Firebase 반영
-        if(!_forceRealVcKey && typeof isPreview==='function' && isPreview()){
-            const pid=getPreviewId();
-            if(pid) return base.replace(/^rl_/, 'rl_pv_'+pid+'_'); // rl_pv_<pid>_active_week
-        }
-    }catch(e){}
+    // 🟢 active_week는 '진도 위치'이지 문제풀이 답이 아니다.
+    //   미리보기(뷰어)는 학생의 실제 진도를 그대로 봐야 하므로 항상 실제 학생 키 사용.
+    //   (문제풀이 답 격리는 _vcKey 등 점수 키에서만 적용)
     try{
         const u=getUser();
-        if(u&&u.id) return base+'_'+u.id;   // rl_active_week_<sid>
+        if(u&&u.id) return base+'_'+u.id;   // rl_active_week_<sid> (미리보기·실제 동일)
     }catch(e){}
     return base; // 최후 폴백(이론상 학생 컨텍스트가 없을 때만)
 }
