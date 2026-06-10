@@ -1260,8 +1260,11 @@ function flowGoNextDay(){
     }catch(e){ console.warn('[가드] 실전 검증 실패(통과 처리):',e); }
     }
     // 실전까지 끝난 현재 학습일 다음으로 진행:
-    // 진도는 점수 데이터 기반으로 자동 전진하므로, phase만 selfcheck로 되돌리면
-    // 다음 미완료 항목(=다음 학습일)이 카드에 잡힌다.
+    //  [구] 진도는 점수 데이터 기반으로 자동 전진 → phase만 selfcheck로 되돌림.
+    //  [신] dayIndex를 직접 +1 (점수와 무관하게 NEXT로만 전진).
+    if(typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS){
+        try{ setDayIndex(getDayIndex()+1); }catch(e){}
+    }
     const st=getFlowState()||{};
     st.phase='selfcheck';
     setFlowState(st);
@@ -1366,12 +1369,73 @@ function _vocabLessonExamDone(idx){
     }catch(e){ return true; }
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   🟢 새 진도 로직 (dayIndex) — 구현명세_0610
+   ───────────────────────────────────────────────────────────────
+   원칙: "진도는 저장된 정수 dayIndex 하나다.
+          점수는 단계 통과 판정만, 진도는 못 건드린다.
+          전진은 NEXT로만, 조정은 어드민으로만."
+
+   dayIndex = 시작일부터 센 '몇 번째 학습일인가' (0-based, 주간평가 제외).
+   USE_NEW_PROGRESS=false 이면 기존 _activeLearnDate(점수 추측) 100% 그대로.
+   ═══════════════════════════════════════════════════════════════ */
+const USE_NEW_PROGRESS = false;   // 🚩 전환 플래그. 검증 끝나면 true.
+
+// dayIndex 저장 키 — active_week와 동일한 학생별 분리 레이어.
+function _dayIndexKey(){
+    const base='rl_dayindex';
+    try{
+        if(typeof isPreview==='function' && isPreview()){
+            const pid=getPreviewId();
+            if(pid) return 'rl_pv_'+pid+'_dayindex';
+        }
+    }catch(e){}
+    try{ const u=getUser(); if(u&&u.id) return base+'_'+u.id; }catch(e){}
+    return base;
+}
+function getDayIndex(){
+    try{
+        const n=parseInt(RL_STORE.get(_dayIndexKey()));
+        return (isFinite(n)&&n>=0)?n:0;
+    }catch(e){ return 0; }
+}
+function setDayIndex(n){
+    try{
+        const v=Math.max(0, parseInt(n)||0);
+        RL_STORE.set(_dayIndexKey(), String(v));
+        try{ localStorage.setItem(_dayIndexKey(), String(v)); }catch(e){}
+    }catch(e){}
+}
+// 전체 학습일(주간평가 제외) 목록 — dayIndex가 인덱싱하는 대상.
+function _allLearnSessions(){
+    const s=getStudentData()||{};
+    let all=[];
+    try{ all=buildAllSessions(s, addDays(new Date(), 365)); }catch(e){ all=[]; }
+    return all.filter(x=>!x.isWeeklyTest).sort((a,b)=>new Date(a.date)-new Date(b.date));
+}
+// dayIndex 기반 현재 학습일 날짜 (점수 안 봄). 범위 넘으면 마지막.
+function _dayIndexToDate(){
+    const learn=_allLearnSessions();
+    if(!learn.length) return null;
+    let idx=getDayIndex();
+    if(idx>=learn.length) idx=learn.length-1;
+    const d=new Date(learn[idx].date); d.setHours(0,0,0,0);
+    return d;
+}
+
 // 🟢 현재 '진행 중'인 학습일(active)의 날짜를 반환.
 //   한 학습일이 '지나간' 것으로 보려면 세 과목 모두 그날 실전(2·4단계)까지 끝나야 한다.
 //   리딩 한 과목만 실전을 봐도(또는 셀프만 끝나도) 다음날로 넘기지 않음.
 //   → 미래 학습일(아직 NEXT로 도달 안 한 수/목/금 등)까지 완료를 요구하면
 //     오늘치를 다 끝내도 NEXT/실전이 안 열리는 버그가 생긴다.
+//   ⚠️ USE_NEW_PROGRESS=true 이면 점수 추측을 버리고 저장된 dayIndex만 사용.
 function _activeLearnDate(){
+    if(typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS){
+        try{ return _dayIndexToDate(); }catch(e){ return null; }
+    }
+    return _legacyActiveLearnDate();
+}
+function _legacyActiveLearnDate(){
     try{
         const week=_thisWeekLearnSessions();
         if(!week||week.length===0) return null;
@@ -3923,6 +3987,16 @@ function advanceWeek(){
     const current=getActiveWeekMonday(sd);
     const next=addDays(current,7);
     RL_STORE.set(_activeWeekKey(),fmtDateISO(next));
+    // 🟢 새 진도: dayIndex를 다음 주 첫 학습일 인덱스로 점프.
+    if(typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS){
+        try{
+            const learn=_allLearnSessions();
+            const nextMon=getWeekMonday(next); nextMon.setHours(0,0,0,0);
+            let firstIdx=learn.findIndex(x=>{ const d=new Date(x.date); d.setHours(0,0,0,0); return d>=nextMon; });
+            if(firstIdx<0) firstIdx=Math.max(0, learn.length-1);
+            setDayIndex(firstIdx);
+        }catch(e){}
+    }
     render();
 }
 
