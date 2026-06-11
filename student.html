@@ -2151,7 +2151,13 @@ function getActiveWeekMonday(sd){
         if(!isNaN(aw.getTime())){
             const awMon=getWeekMonday(aw);
             awMon.setHours(0,0,0,0);
-            result=awMon;      // 저장값을 그대로 존중(날짜로 끌어올리지 않음)
+            // [버그 수정 0612] 잔존값 보정: 저장된 active_week가 '학생 시작주'보다
+            //   이전이면 무시한다 (재사용 계정에서 시작일을 미래로 바꾸면 옛 active_week
+            //   때문에 세션 0개 → "표시할 일정이 없습니다" 빈 화면이 나오던 원인).
+            //   ⚠️ 시작주 '이후'의 저장값은 그대로 존중 — 달력 자동 전진 금지(0611 수정 유지).
+            const startMon=getWeekMonday(startDate);
+            startMon.setHours(0,0,0,0);
+            result = (awMon.getTime()<startMon.getTime()) ? floorMon : awMon;
         }
     }
     return result;
