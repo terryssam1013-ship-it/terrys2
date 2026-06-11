@@ -710,6 +710,8 @@ async function syncDownStudentState(){
                 if(!fbKey.includes(sid)) continue;
                 if(typeof value === 'string'){
                     RL_STORE.__origSet.call(RL_STORE, fbKey, value);
+                    // 🔧 rl_flow는 grammarwise-*.html 등 별도 페이지가 localStorage만 조회 → 미러링 필수
+                    if(fbKey.startsWith('rl_flow_')){ try{ localStorage.setItem(fbKey, value); }catch(e){} }
                     restoredPrefixed++;
                 }
             }
