@@ -2251,20 +2251,42 @@ function renderSchedule(s){
     let _activeRL=null;
     try{ _activeRL=_activeLearnDate(); if(_activeRL) _activeRL.setHours(0,0,0,0); }catch(e){ _activeRL=null; }
     let currentIdx=-1;
-    // 🟢 새 진도(dayIndex) ON: 리딩 카드도 dayIndex가 가리키는 학습일로 고정.
-    //   (문법 curUnit=_startGrammarUnit+dayIndex 와 동일 순번 → 리딩·문법·단어 통일)
+    // 🟢 새 진도(dayIndex) ON: 세 과목(리딩/문법/단어) 카드가 공유하는 '현재 행' 단일 결정.
+    //   [버그 수정 0612] 이전 버전은 표시범위 로컬 인덱스(_learns[_di])를 써서
+    //   2주차부터(표시범위가 시작일과 다르면) 매칭이 깨지고 과목별로 갈라졌다.
+    //   → 글로벌 학습일 목록(_allLearnSessions)의 dayIndex번째 '날짜'를
+    //     표시 sessions에서 날짜로 매칭한다. 결과(_diRowIdx)를 문법/단어도 그대로 사용.
+    //   규칙:
+    //   1) 날짜 매칭 성공 → 그 학습일 행 (세 과목 공통)
+    //   2) 날짜가 표시범위 끝보다 뒤(=이번 주 학습일 모두 NEXT로 통과) → 이번 주 주간평가 행
+    //   3) 날짜가 표시범위 앞(이 주 도달 전) → 첫 학습일 행
+    let _diRowIdx=-1, _diIsWeeklyRow=false, _diVal=-1;
     if(typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS){
         try{
-            const _di=getDayIndex();
-            const _learns=sessions.filter(x=>!x.isWeeklyTest);
-            const _target=_learns[_di];   // dayIndex번째 학습일
-            if(_target){
+            _diVal=getDayIndex();
+            const _gl=_allLearnSessions();
+            const _tgt=_gl[Math.min(_diVal, Math.max(0,_gl.length-1))];
+            if(_tgt){
+                const _td=new Date(_tgt.date); _td.setHours(0,0,0,0);
                 for(let i=0;i<sessions.length;i++){
-                    if(!sessions[i].isWeeklyTest && sessions[i].date.getTime()===_target.date.getTime()){ currentIdx=i; break; }
+                    if(sessions[i].isWeeklyTest) continue;
+                    const _d=new Date(sessions[i].date); _d.setHours(0,0,0,0);
+                    if(_d.getTime()===_td.getTime()){ _diRowIdx=i; break; }
                 }
+                if(_diRowIdx===-1){
+                    const _lastD=new Date(sessions[sessions.length-1].date); _lastD.setHours(0,0,0,0);
+                    if(_td.getTime()>_lastD.getTime()){
+                        // dayIndex가 다음 주를 가리킴 = 이번 주 학습일 전부 통과 → 주간평가 차례
+                        for(let i=0;i<sessions.length;i++){ if(sessions[i].isWeeklyTest){ _diRowIdx=i; _diIsWeeklyRow=true; break; } }
+                    }
+                    if(_diRowIdx===-1){
+                        for(let i=0;i<sessions.length;i++){ if(!sessions[i].isWeeklyTest){ _diRowIdx=i; break; } }
+                    }
+                }
+                currentIdx=_diRowIdx;
+                console.log('[dayIndex/공용행] dayIndex:',_diVal,'target:',fmtDateISO(_td),'→ rowIdx:',_diRowIdx,'weeklyRow:',_diIsWeeklyRow);
             }
-            console.log('[리딩/dayIndex] dayIndex:',_di,'→ currentIdx:',currentIdx);
-        }catch(e){ console.warn('[리딩/dayIndex] 실패',e); }
+        }catch(e){ console.warn('[dayIndex/공용행] 실패',e); _diRowIdx=-1; _diIsWeeklyRow=false; }
     }
     if(currentIdx===-1)
     for(let i=0;i<sessions.length;i++){
@@ -2496,10 +2518,21 @@ function renderSchedule(s){
         //   점수 기반 curUnit 계산(아래)을 건너뛰어 '문법만 앞서가는' 갈라짐을 원천 차단.
         if(typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS){
             try{
-                const _di=getDayIndex();
-                curUnit=_startGrammarUnit+_di;
-                for(let i=0;i<sessions.length;i++){ if(sessGrammarUnit[i]===curUnit){grammarNextRowIdx=i;break;} }
-                console.log('[문법/dayIndex] dayIndex:',_di,'→ curUnit:',curUnit,'rowIdx:',grammarNextRowIdx);
+                // [버그 수정 0612] 공용 행(_diRowIdx)을 그대로 사용 — 리딩·단어와 같은 행 보장.
+                //   curUnit은 그 행의 날짜 기반 매핑(sessGrammarUnit)을 우선 사용해
+                //   dayIndex 산술과 세션 빌드가 어긋나도 세 과목이 항상 같은 날을 본다.
+                if(_diRowIdx>=0){
+                    grammarNextRowIdx=_diRowIdx;
+                    if(!_diIsWeeklyRow && typeof sessGrammarUnit[_diRowIdx]==='number'){
+                        curUnit=sessGrammarUnit[_diRowIdx];
+                    } else {
+                        curUnit=_startGrammarUnit+Math.max(0,_diVal);
+                    }
+                } else {
+                    curUnit=_startGrammarUnit+Math.max(0,getDayIndex());
+                    for(let i=0;i<sessions.length;i++){ if(sessGrammarUnit[i]===curUnit){grammarNextRowIdx=i;break;} }
+                }
+                console.log('[문법/dayIndex] dayIndex:',_diVal,'→ curUnit:',curUnit,'rowIdx:',grammarNextRowIdx,'weeklyRow:',_diIsWeeklyRow);
             }catch(e){ console.warn('[문법/dayIndex] 실패',e); }
         }
         if(!(typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS)){
@@ -2557,6 +2590,11 @@ function renderSchedule(s){
         }
         } // ── 점수 기반 계산 끝 (dayIndex OFF일 때만) ──
         // 학습일 매칭 시도
+        //   [버그 수정 0612] dayIndex ON + 공용 행 확정 시에는 아래 재매칭/주간 fallback을
+        //   전부 건너뛴다 — 점수 기반 로직이 dayIndex가 정한 행을 덮어써서
+        //   주 경계에서 문법만 갈라지거나(grammarNextRowIdx 덮어쓰기),
+        //   매칭 실패로 -1이 되어 카드가 '완료'로 잘못 뜨던 원인.
+        if(!((typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS) && _diRowIdx>=0)){
         console.log('[문법] curUnit최종:',curUnit,'sessGrammarUnit:',JSON.stringify(sessGrammarUnit));
         for(let i=0;i<sessions.length;i++){
             if(sessGrammarUnit[i]===curUnit){grammarNextRowIdx=i;break;}
@@ -2585,6 +2623,7 @@ function renderSchedule(s){
                 }
             }
         }
+        } // ── dayIndex OFF(또는 공용 행 미확정)일 때만 실행되는 재매칭/fallback 끝 ──
     }
     
     sessions.forEach((sess,i)=>{
@@ -3049,7 +3088,10 @@ function renderSchedule(s){
             const vocabStartDate2=_sdVocab.startVocabDate?new Date(_sdVocab.startVocabDate+'T00:00:00'):null;
             const deckName2=vDeck.name||_vocabDeckId;
             // 가장 가까운 미완료 단어 세션 찾기 (학습일 + 평가일)
+            //   [버그 수정 0612] dayIndex ON: 점수 탐색 없이 공용 행(_diRowIdx)만 본다.
+            //   (리딩·문법과 같은 행 → 주 경계에서 DAY 번호 어긋나던 버그 해소)
             for(let i=0;i<sessions.length;i++){
+                if((typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS) && _diRowIdx>=0 && i!==_diRowIdx) continue;
                 const vs=sessions[i];
                 if(vs.isWeeklyTest){
                     // 평가일: 주간평가 실전 완료 여부 확인
@@ -3143,7 +3185,10 @@ function renderSchedule(s){
                     }
                 }
                 const _vHold = _holdOnExam && _vReDone && _vScRec && !_vLaterPending;
-                if(!_vReDone || _vHold){
+                // [버그 수정 0612] dayIndex ON: 공용 행이면 기록 유무와 무관하게 카드를 항상 생성.
+                //   (기존엔 실전 기록이 있으면 카드를 안 만들어 vocabHW=null → '완료' 오표시)
+                const _vForceBuild = (typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS) && _diRowIdx>=0 && i===_diRowIdx;
+                if(_vForceBuild || !_vReDone || _vHold){
                     const _vsc=_vScRec;
                     const _vscDone=_vsc && (_vsc.passed || (_vsc.attempts||0)>=2);
                     const vPhase=_vReDone?'실전':(_vscDone?'실전':'훈련');
@@ -3508,6 +3553,8 @@ function renderFlowWeek(ctx){
     //   (selfcheck → 세 과목 self / exam → 세 과목 exam). 주간평가(weekly)는 제외.
     if(typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS){
         try{
+            // [진단 0612] 공용 행 통일 후에도 HW가 null이면 데이터/세션 빌드 문제 — 즉시 드러내기
+            subjects.forEach(x=>{ if(!x.hw) console.error('[dayIndex] ★ HW null — 카드 데이터 누락:', x.key, '(공용 행 결정 로그 [dayIndex/공용행] 확인)'); });
             const _ph=(flow&&flow.phase)||'selfcheck';
             subjects.forEach(x=>{
                 if(x.st==='weekly') return;            // 주간평가는 weeklyStage로 따로 처리
@@ -3609,8 +3656,10 @@ function renderFlowWeek(ctx){
             sub = _dateStr ? `${_dateStr} · 주간 실전 ${_wscTxt}` : `주간 실전 ${_wscTxt}`;
         } else {
             // self-active / wtrain / wexam: hw의 label/sub 사용
-            title = hw ? hw.label : `${subj.name} 완료`;
-            sub = hw ? hw.sub : '실전평가까지 완료했어요';
+            //   [버그 수정 0612] hw가 null인데 '진행' 모드로 호출됐다면 데이터 누락 —
+            //   '완료'로 위장 표시하지 않고 오류임을 드러낸다 (주 경계 "문법 완료" 오표시 원인).
+            if(hw){ title = hw.label; sub = hw.sub; }
+            else { title = `${_nm} 숙제 불러오기 오류`; sub = '새로고침 해주세요 (계속되면 선생님께 문의)'; }
         }
         let cta, onclick, locked=false, faded=false;
         if(mode==='self-active'){
