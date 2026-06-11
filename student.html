@@ -9138,12 +9138,16 @@ function adminCompleteReadingWeekly(weekId,mode){
     const existing=LS.g(lsKey)||{};
     if(mode==='train'){
         existing.trainDone=true;
+        existing.trainPassed=true;                                  // 어드민 완료 = 통과 처리 (6단계 NEXT 개방 조건)
+        if(typeof existing.trainScore!=='number') existing.trainScore=0;  // [0612] 점수 없으면 0 기록 → 누적현황 '완료' 대신 0 표시
         existing.adminCompleted=true;
     } else {
         existing.trainDone=true;
+        existing.trainPassed=true;
+        if(typeof existing.trainScore!=='number') existing.trainScore=0;
         existing.examDone=true;
-        existing.score=0;
-        existing.grade='';
+        if(typeof existing.score!=='number') existing.score=0;      // [0612] 실제 응시 점수가 있으면 보존 (0점 덮어쓰기 금지)
+        if(existing.grade===undefined) existing.grade='';
         existing.adminCompleted=true;
     }
     LS.s(lsKey,existing);
