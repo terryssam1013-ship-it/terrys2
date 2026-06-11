@@ -1390,6 +1390,7 @@ function _vocabLessonExamDone(idx){
 //   ?newprogress=1 로 켜면 localStorage에 저장돼 계속 유지.
 //   ⚠️ 실제 학생(아래 _REAL_STUDENTS)은 어떤 경우에도 무조건 OFF — dayIndex 미마이그레이션 상태라 켜면 진도 깨짐.
 //   검증 끝나고 마이그레이션 후 이 목록을 비우거나 전체 true로 전환.
+const _BUILD='0612-r3 학생OFF';
 const _REAL_STUDENTS = ['mbest0601','mbest0602','mbest0603','mbest0604'];
 const USE_NEW_PROGRESS = (function(){
     try{
@@ -1407,6 +1408,17 @@ const USE_NEW_PROGRESS = (function(){
         return localStorage.getItem('_np_flag')==='1';
     }catch(e){ return false; }
 })();
+
+// ═══ [0612] 빌드 태그 + 서비스워커 자동 갱신 ═══
+//   콘솔/어드민 패널에서 "지금 어떤 버전·모드로 도는지" 즉시 확인용.
+const _BUILD_TAG = '2026-0612a';
+try{ console.log('%c[TERRYS] 빌드 '+_BUILD_TAG+' · 새진도(dayIndex): '+(USE_NEW_PROGRESS?'ON':'OFF'), 'color:#10B981;font-weight:bold;font-size:13px'); }catch(e){}
+// 매 로드마다 SW 업데이트 확인 → 새 service-worker.js 배포 시 즉시 교체 (v2부터 네트워크 우선)
+try{
+    if('serviceWorker' in navigator){
+        navigator.serviceWorker.register('./service-worker.js').then(function(r){ try{ r.update(); }catch(e){} }).catch(function(){});
+    }
+}catch(e){}
 
 // dayIndex 저장 키 — 진도 위치(문제풀이 답 아님)이므로 항상 실제 학생 키 사용.
 //   active_week와 동일 원리: 미리보기(뷰어)도 학생 실제 진도를 보고/움직여야 동기화됨.
@@ -1926,8 +1938,28 @@ function render(){
 }
 
 function renderPreviewBanner(s){
+    // [0612] 상태 표시줄: "지금 어떤 모드인지" 콘솔 없이 화면에서 즉시 확인.
+    //   캐시·플래그·dayIndex·주차가 안 보여서 멀쩡한 코드가 버그로 보이던 반복 문제 차단.
+    let _stat='';
+    try{
+        const _np=(typeof USE_NEW_PROGRESS!=='undefined' && USE_NEW_PROGRESS);
+        const _fs=getFlowState()||{};
+        const _stage=_fs.weeklyStage?('주간'+(_fs.weeklyStage==='exam'?'실전(6)':'훈련(5)')):(_fs.phase==='exam'?'실전':'셀프');
+        const _aw=RL_STORE.get(_activeWeekKey())||'(없음)';
+        const _npBadge=_np
+            ?'<span style="background:#10B981;padding:1px 8px;border-radius:10px">새진도 ON</span>'
+            :'<span style="background:#EF4444;padding:1px 8px;border-radius:10px">⚠️ 새진도 OFF — ?newprogress=1 필요</span>';
+        _stat=`<div style="font-size:11.5px;font-weight:500;opacity:.95;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <span style="background:rgba(255,255,255,.18);padding:1px 8px;border-radius:10px">빌드 ${typeof _BUILD!=='undefined'?_BUILD:'?'}</span>
+            ${_npBadge}
+            <span>dayIndex <b>${getDayIndex()}</b></span>
+            <span>주차 <b>${_aw}</b></span>
+            <span>단계 <b>${_stage}</b></span>
+        </div>`;
+    }catch(e){ _stat=''; }
     return `<div style="background:linear-gradient(90deg,#3B82F6,#8B5CF6);color:#fff;padding:10px 20px;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
         <div>👁 미리보기 모드 — <strong>${s.name||''}</strong> 학생 화면 · 학생의 실제 학습 진도가 표시됩니다 · 미리보기에서 푼 답은 별도 영역에 저장 (학생 실제 데이터 영향 없음)</div>
+        ${_stat}
         <div style="display:flex;gap:8px">
             <button onclick="resetPreviewData()" style="background:rgba(255,255,255,.2);color:#fff;padding:5px 12px;font-size:12px" title="이 미리보기에서 푼 답만 초기화 (학생 실제 데이터는 그대로)">🗑️ 미리보기 답 초기화</button>
             <button onclick="window.close()" style="background:rgba(255,255,255,.2);color:#fff;padding:5px 12px;font-size:12px">닫기 ✕</button>
@@ -3822,8 +3854,15 @@ function wrapFlow(inner){
             if(_fs.weeklyStage==='exam') phaseLabel='주간평가 실전(6단계)';
             else if(_fs.weeklyStage) phaseLabel='주간평가 훈련(5단계)';
             else phaseLabel = ph==='exam' ? '실전평가 단계' : '셀프체크 단계';
+            // [0612] 상태 배지: 버전/모드 착오로 인한 헛테스트 방지
+            let _statusLine='';
+            try{
+                const _aw=fmtDateISO(getActiveWeekMonday(getStudentData()||{}));
+                _statusLine=`<div style="font-size:11px;color:#92400E;text-align:center;margin-bottom:8px;background:#FEF3C7;border-radius:8px;padding:5px 8px">빌드 <b>${_BUILD_TAG}</b> · 새진도 <b style="color:${USE_NEW_PROGRESS?'#059669':'#DC2626'}">${USE_NEW_PROGRESS?'ON':'OFF ⚠️'}</b> · dayIndex <b>${getDayIndex()}</b> · 주차 <b>${_aw}</b></div>`;
+            }catch(e){}
             adminPanel=`
             <div style="margin-top:28px;padding:18px;border:2px dashed #F59E0B;border-radius:14px;background:#FFFBEB">
+                ${_statusLine}
                 <div style="font-size:13px;font-weight:800;color:#92400E;text-align:center;margin-bottom:4px">🛠 구간 점프 (어드민 전용 · 학생 계정 반영)</div>
                 <div style="font-size:12px;color:#B45309;text-align:center;margin-bottom:14px">현재: <b>${phaseLabel}</b><br>다음 = 안 한 과목만 0점 처리 후 다음 단계 · 이전 = 현재 단계 리셋 후 되돌리기</div>
                 <div style="display:flex;gap:10px;justify-content:center">
