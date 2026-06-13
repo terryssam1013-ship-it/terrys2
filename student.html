@@ -1390,11 +1390,14 @@ function _vocabLessonExamDone(idx){
 //   ?newprogress=1 로 켜면 localStorage에 저장돼 계속 유지.
 //   ⚠️ 실제 학생(아래 _REAL_STUDENTS)은 어떤 경우에도 무조건 OFF — dayIndex 미마이그레이션 상태라 켜면 진도 깨짐.
 //   검증 끝나고 마이그레이션 후 이 목록을 비우거나 전체 true로 전환.
-const _BUILD='0612-r3 학생OFF';
-const _REAL_STUDENTS = ['mbest0601','mbest0602','mbest0603','mbest0604'];
+// [0612 전환] dayIndex 진도 시스템 전체 ON — 실제 학생 포함.
+//   ?newprogress=0 으로만 끌 수 있음(긴급 롤백용, localStorage에 저장돼 유지).
+//   _REAL_STUDENTS 강제 OFF는 마이그레이션 완료로 비움.
+const _BUILD='0612-r3 전체ON';
+const _REAL_STUDENTS = [];
 const USE_NEW_PROGRESS = (function(){
     try{
-        // 실제 학생이면 무조건 OFF (localStorage/URL 무관)
+        // (잔존 안전장치) 목록에 있으면 무조건 OFF — 현재는 빈 목록
         try{
             const sid = (getPreviewId&&getPreviewId()) || (JSON.parse(RL_STORE.get('rl_current_user')||'{}').id);
             if(sid && _REAL_STUDENTS.indexOf(sid)>=0) return false;
@@ -1405,13 +1408,14 @@ const USE_NEW_PROGRESS = (function(){
             try{ localStorage.setItem('_np_flag', on?'1':'0'); }catch(e){}
             return on;
         }
-        return localStorage.getItem('_np_flag')==='1';
-    }catch(e){ return false; }
+        // 기본값 ON. 과거 ?newprogress=0 으로 저장된 기기만 OFF 유지.
+        return localStorage.getItem('_np_flag')!=='0';
+    }catch(e){ return true; }
 })();
 
 // ═══ [0612] 빌드 태그 + 서비스워커 자동 갱신 ═══
 //   콘솔/어드민 패널에서 "지금 어떤 버전·모드로 도는지" 즉시 확인용.
-const _BUILD_TAG = '2026-0612a';
+const _BUILD_TAG = '2026-0612a-전체ON';
 try{ console.log('%c[TERRYS] 빌드 '+_BUILD_TAG+' · 새진도(dayIndex): '+(USE_NEW_PROGRESS?'ON':'OFF'), 'color:#10B981;font-weight:bold;font-size:13px'); }catch(e){}
 // 매 로드마다 SW 업데이트 확인 → 새 service-worker.js 배포 시 즉시 교체 (v2부터 네트워크 우선)
 try{
