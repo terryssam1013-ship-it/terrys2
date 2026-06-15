@@ -3350,55 +3350,45 @@ function _progReadingScore(id, s, unitNo, stage){
         return (v&&typeof v.score==='number')?v.score:null;
     }
 }
-// 문법: selfChecks["<ch>"].attempts 마지막 pct / exams["<ch>"] 마지막 점수
+// 문법: 실제 저장 키 = rl_gr_<id>_<교재토큰>_sc_<ch>(셀프) / _exam_<ch>(실전)
+//   교재토큰은 'NAMOG2' 처럼 대문자. 키를 직접 스캔해 해당 챕터의 기록을 읽는다.
 function _progGrammarScore(id, chapter, stage){
-    const recs=_progReadJSON('rl_grammar_'+id) || _progReadJSON('rl_grammar_records_'+id);
-    // grammar 기록 키가 다를 수 있어 후보를 추가 탐색
-    let g=recs;
-    if(!g){
-        const cand=RL_STORE.keys().find(k=>/grammar/i.test(k)&&k.includes(id)&&!/url|log/i.test(k));
-        if(cand) g=_progReadJSON(cand);
-    }
-    if(!g) return null;
+    const tag = stage==='self' ? '_sc_' : '_exam_';
     const chKey=String(chapter);
-    if(stage==='self'){
-        const sc=g.selfChecks&&g.selfChecks[chKey];
-        if(!sc) return null;
-        if(sc.adminCompleted) return 0;
-        const att=sc.attempts;
-        if(Array.isArray(att)&&att.length){ const last=att[att.length-1]; return typeof last.pct==='number'?last.pct:null; }
-        return null;
-    } else {
-        const ex=g.exams&&g.exams[chKey];
-        if(!ex) return null;
-        if(ex.adminCompleted) return 0;
-        const att=ex.attempts;
-        if(Array.isArray(att)&&att.length){ const last=att[att.length-1]; return typeof last.pct==='number'?last.pct:(typeof last.score==='number'?last.score:null); }
-        return (typeof ex.score==='number')?ex.score:null;
+    // rl_gr_<id>..._sc_<ch> 패턴 키 탐색 (교재토큰 모름 → 끝부분 매칭)
+    const keys=RL_STORE.keys().filter(k=>k.startsWith('rl_gr_'+id) && k.endsWith(tag+chKey));
+    if(keys.length===0) return null;
+    const rec=_progReadJSON(keys[0]);
+    if(!rec) return null;
+    if(rec.adminCompleted) return 0;
+    // attempts 배열 마지막 시도의 점수(pct), 없으면 score/right·total
+    const att=rec.attempts;
+    if(Array.isArray(att)&&att.length){
+        const last=att[att.length-1];
+        if(typeof last.pct==='number') return last.pct;
+        if(typeof last.score==='number') return last.score;
+        if(typeof last.right==='number'&&typeof last.total==='number'&&last.total>0) return Math.round(last.right/last.total*100);
     }
-}
-// 단어: rl_vc_selfcheck / rl_vc_realexam (학생 실제 키 = 접미 _<id>) 의 <deckId>_<DAY>_1 .score
-function _progVocabScore(id, s, dayNo, stage){
-    const deckId=s.textbooks&&s.textbooks.vocab ? _progVocabDeckId(s) : null;
-    const base = stage==='self' ? 'rl_vc_selfcheck' : 'rl_vc_realexam';
-    // 학생 실제 키는 base+'_'+id (vocab-learn 저장 규칙). 우선 그걸, 없으면 base 단독.
-    let obj=_progReadJSON(base+'_'+id) || _progReadJSON(base);
-    if(!obj) return null;
-    // 키 형태: <deckId>_<DAY>_1
-    const want = deckId ? (deckId+'_'+dayNo+'_1') : null;
-    if(want && obj[want] && typeof obj[want].score==='number') return obj[want].score;
-    // deckId 모르면 _<DAY>_1로 끝나는 키 매칭
-    const k=Object.keys(obj).find(k=>k.endsWith('_'+dayNo+'_1'));
-    if(k && obj[k] && typeof obj[k].score==='number') return obj[k].score;
+    if(typeof rec.pct==='number') return rec.pct;
+    if(typeof rec.score==='number') return rec.score;
     return null;
 }
-function _progVocabDeckId(s){
-    try{
-        const idx=LS.g('vocab_index')||{};
-        const name=s.textbooks&&s.textbooks.vocab;
-        const hit=Object.entries(idx).find(([k,v])=>v&&v.name===name);
-        return hit?hit[0]:null;
-    }catch(e){ return null; }
+// 단어: rl_vc_selfcheck_<id> / rl_vc_realexam_<id> 객체의 <deckId>_<DAY>_1 .score
+function _progVocabScore(id, s, dayNo, stage){
+    const base = stage==='self' ? 'rl_vc_selfcheck' : 'rl_vc_realexam';
+    // 학생 실제 키 우선 (vocab-learn 저장 규칙: base_<id>), 없으면 base 단독
+    let obj=_progReadJSON(base+'_'+id) || _progReadJSON(base);
+    if(!obj) return null;
+    // 이 DAY 묶음 키: 아무 deckId든 '_<DAY>_1'로 끝나는 키
+    const k=Object.keys(obj).find(kk=>kk.endsWith('_'+dayNo+'_1'));
+    if(!k) return null;
+    const rec=obj[k];
+    if(!rec) return null;
+    if(typeof rec.score==='number') return rec.score;
+    if(typeof rec.bestScore==='number') return rec.bestScore;
+    if(typeof rec.pct==='number') return rec.pct;
+    if(typeof rec.totalCorrect==='number'&&typeof rec.totalQ==='number'&&rec.totalQ>0) return Math.round(rec.totalCorrect/rec.totalQ*100);
+    return null;
 }
 
 function tabProgress(){
