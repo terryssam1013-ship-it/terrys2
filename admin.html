@@ -3335,6 +3335,72 @@ function _progNextReady(id){
 }
 function _progDayIndex(id){ try{ const n=parseInt(RL_STORE.get('rl_dayindex_'+id)); return isNaN(n)?0:n; }catch(e){ return 0; } }
 
+// [0615] 학습현황 표용 점수 직접 읽기 — student.html의 getUnitScores와 '동일 출처 키'를 읽는다.
+//   ⚠️ 미리보기 격리(rl_pv_) 아닌 '학생 실제 키'를 읽음(어드민은 학생 실데이터를 봐야 함).
+//   반환: 숫자(점수) | null(미응시/미완료)
+function _progReadJSON(key){ try{ const v=RL_STORE.get(key); return v?JSON.parse(v):null; }catch(e){ return null; } }
+// 리딩 셀프 = rl_trtype_<id>_unit<N>_sentSelf 의 .score / 실전 = assess_<id>_<book>_unit<N> 의 .score
+function _progReadingScore(id, s, unitNo, stage){
+    if(stage==='self'){
+        const v=_progReadJSON('rl_trtype_'+id+'_unit'+unitNo+'_sentSelf');
+        return (v&&typeof v.score==='number')?v.score:null;
+    } else {
+        const book=s.textbooks&&s.textbooks.reading;
+        const v=_progReadJSON('rl_assess_'+id+'_'+book+'_unit'+unitNo);
+        return (v&&typeof v.score==='number')?v.score:null;
+    }
+}
+// 문법: selfChecks["<ch>"].attempts 마지막 pct / exams["<ch>"] 마지막 점수
+function _progGrammarScore(id, chapter, stage){
+    const recs=_progReadJSON('rl_grammar_'+id) || _progReadJSON('rl_grammar_records_'+id);
+    // grammar 기록 키가 다를 수 있어 후보를 추가 탐색
+    let g=recs;
+    if(!g){
+        const cand=RL_STORE.keys().find(k=>/grammar/i.test(k)&&k.includes(id)&&!/url|log/i.test(k));
+        if(cand) g=_progReadJSON(cand);
+    }
+    if(!g) return null;
+    const chKey=String(chapter);
+    if(stage==='self'){
+        const sc=g.selfChecks&&g.selfChecks[chKey];
+        if(!sc) return null;
+        if(sc.adminCompleted) return 0;
+        const att=sc.attempts;
+        if(Array.isArray(att)&&att.length){ const last=att[att.length-1]; return typeof last.pct==='number'?last.pct:null; }
+        return null;
+    } else {
+        const ex=g.exams&&g.exams[chKey];
+        if(!ex) return null;
+        if(ex.adminCompleted) return 0;
+        const att=ex.attempts;
+        if(Array.isArray(att)&&att.length){ const last=att[att.length-1]; return typeof last.pct==='number'?last.pct:(typeof last.score==='number'?last.score:null); }
+        return (typeof ex.score==='number')?ex.score:null;
+    }
+}
+// 단어: rl_vc_selfcheck / rl_vc_realexam (학생 실제 키 = 접미 _<id>) 의 <deckId>_<DAY>_1 .score
+function _progVocabScore(id, s, dayNo, stage){
+    const deckId=s.textbooks&&s.textbooks.vocab ? _progVocabDeckId(s) : null;
+    const base = stage==='self' ? 'rl_vc_selfcheck' : 'rl_vc_realexam';
+    // 학생 실제 키는 base+'_'+id (vocab-learn 저장 규칙). 우선 그걸, 없으면 base 단독.
+    let obj=_progReadJSON(base+'_'+id) || _progReadJSON(base);
+    if(!obj) return null;
+    // 키 형태: <deckId>_<DAY>_1
+    const want = deckId ? (deckId+'_'+dayNo+'_1') : null;
+    if(want && obj[want] && typeof obj[want].score==='number') return obj[want].score;
+    // deckId 모르면 _<DAY>_1로 끝나는 키 매칭
+    const k=Object.keys(obj).find(k=>k.endsWith('_'+dayNo+'_1'));
+    if(k && obj[k] && typeof obj[k].score==='number') return obj[k].score;
+    return null;
+}
+function _progVocabDeckId(s){
+    try{
+        const idx=LS.g('vocab_index')||{};
+        const name=s.textbooks&&s.textbooks.vocab;
+        const hit=Object.entries(idx).find(([k,v])=>v&&v.name===name);
+        return hit?hit[0]:null;
+    }catch(e){ return null; }
+}
+
 function tabProgress(){
     const users=LS.g('users')||{};
     const students=Object.entries(users).filter(([k,v])=>v.role==='student');
@@ -3354,25 +3420,42 @@ function tabProgress(){
     });
 
     const _card=(row, faded)=>{
-        const {id,s,dateISO,label}=row;
+        const {id,s,dateISO,learnNo,label}=row;
         const di=_progDayIndex(id);
         const initials=(s.name||'').slice(0,2);
         const bookName=s.textbooks?.reading||'-';
         const grammarName=s.textbooks?.grammar||'-';
         const vocabName=s.textbooks?.vocab||'-';
-        // 진도 라벨 (dayIndex 기반 추정: Unit/Ch/DAY = 시작+di). 시작값은 student가 가진 startUnit 등 — 없으면 dayIndex+1로 표기
-        const unitNo=(s.startUnit||1)+di;
+        // 6/15(해당 학습일)의 과목별 번호: 시작값 + dayIndex
+        const unitNo=(parseInt(s.startUnit)||1)+di;
+        const isNamog=/namog|나모그/i.test(grammarName);
+        const gStartPt=parseInt(s.startGrammarPoint)||1;
+        const chapterNo=isNamog?(gStartPt+di):(Math.ceil(gStartPt/4)+di);
+        const vDayNo=(parseInt(s.startVocabDay)||1)+di;
         const dStr=dateISO.slice(5).replace('-','/');
-        // 점수 클릭 → 미리보기를 누적현황 탭으로 열기
         const openCum=`openProgressResult('${id}')`;
+        // 점수 셀 렌더: 숫자면 점수칩(클릭→결과), null이면 –
+        const _cell=(sc)=>{
+            if(sc===null||sc===undefined) return `<td style="text-align:center;color:var(--text3)">–</td>`;
+            const pass=sc>=80;
+            const bg=pass?'var(--green-light)':'#FEF3C7';
+            const fg=pass?'var(--green)':'#92400E';
+            return `<td style="text-align:center"><span onclick="${openCum}" title="클릭하여 결과 보기" style="display:inline-block;padding:2px 8px;background:${bg};color:${fg};border-radius:4px;font-weight:700;font-size:12px;cursor:pointer">${sc}</span></td>`;
+        };
+        const rSelf=_progReadingScore(id,s,unitNo,'self');
+        const rExam=_progReadingScore(id,s,unitNo,'exam');
+        const gSelf=_progGrammarScore(id,chapterNo,'self');
+        const gExam=_progGrammarScore(id,chapterNo,'exam');
+        const vSelf=_progVocabScore(id,s,vDayNo,'self');
+        const vExam=_progVocabScore(id,s,vDayNo,'exam');
         return `<div class="card" style="margin-bottom:8px;${faded?'opacity:.85':''}">
             <div class="flex flex-between" style="align-items:center;margin-bottom:10px">
                 <div class="flex flex-gap" style="align-items:center">
                     <div style="width:34px;height:34px;border-radius:50%;background:var(--blue-light);color:var(--blue);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">${initials}</div>
                     <div>
                         <span style="font-weight:800;font-size:15px">${s.name}</span>
-                        <span style="font-size:12px;color:var(--text3);margin-left:6px">${bookName} · ${grammarName} · ${vocabName}</span>
-                        <div style="font-size:11px;color:var(--text3);margin-top:2px">${(s.days||[]).join('·')}반 · ${dStr} 학습일</div>
+                        <span style="font-size:12px;color:var(--text3);margin-left:6px">Unit ${unitNo} · ${isNamog?'Ch':'P'} ${chapterNo} · DAY ${vDayNo}</span>
+                        <div style="font-size:11px;color:var(--text3);margin-top:2px">${(s.days||[]).join('·')}반 · ${dStr} 학습일 · ${bookName}</div>
                     </div>
                 </div>
                 <span class="tag tag-green" style="cursor:pointer" onclick="${openCum}" title="누적현황·결과 보기">NEXT · ${label} →</span>
@@ -3381,7 +3464,7 @@ function tabProgress(){
                 <th>날짜</th><th>리딩 셀프</th><th>리딩 실전</th><th>문법 셀프</th><th>문법 실전</th><th>단어 셀프</th><th>단어 실전</th>
             </tr></thead><tbody><tr>
                 <td style="font-weight:600">${dStr}</td>
-                ${['rSelf','rExam','gSelf','gExam','vSelf','vExam'].map(()=>`<td style="text-align:center"><span onclick="${openCum}" style="cursor:pointer;color:var(--blue);font-weight:600" title="누적현황에서 점수·결과 보기">보기</span></td>`).join('')}
+                ${_cell(rSelf)}${_cell(rExam)}${_cell(gSelf)}${_cell(gExam)}${_cell(vSelf)}${_cell(vExam)}
             </tr></tbody></table>
         </div>`;
     };
