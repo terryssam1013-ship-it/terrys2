@@ -3334,6 +3334,20 @@ function _progNextReady(id){
     return {ready:false, label:'셀프 진행중'};
 }
 function _progDayIndex(id){ try{ const n=parseInt(RL_STORE.get('rl_dayindex_'+id)); return isNaN(n)?0:n; }catch(e){ return 0; } }
+// 단어 deckId: 학생 셀프 객체의 키(deck_<id>/<DAY>_1)에서 deck 부분을 추출
+function _progVocabDeckId(s){
+    try{
+        const id=Object.keys(LS.g('users')||{}).find(k=>(LS.g('users')[k]===s)) ;
+    }catch(e){}
+    return null; // 아래 _progVocabDeckIdById로 대체 사용
+}
+function _progVocabDeckIdFromObj(id){
+    const o=_progReadJSON('rl_vc_selfcheck_'+id)||_progReadJSON('rl_vc_realexam_'+id);
+    if(!o) return '';
+    const k=Object.keys(o)[0]||'';
+    const m=k.match(/^(.*?)[\/_]\d+_1/);
+    return m?m[1]:'';
+}
 
 // [0615] 학습현황 표용 점수 직접 읽기 — student.html의 getUnitScores와 '동일 출처 키'를 읽는다.
 //   ⚠️ 미리보기 격리(rl_pv_) 아닌 '학생 실제 키'를 읽음(어드민은 학생 실데이터를 봐야 함).
@@ -3430,14 +3444,23 @@ function tabProgress(){
         const chapterNo=isNamog?(gStartPt+di):(Math.ceil(gStartPt/4)+di);
         const vDayNo=(parseInt(s.startVocabDay)||1)+di;
         const dStr=dateISO.slice(5).replace('-','/');
-        const openCum=`openProgressResult('${id}')`;
-        // 점수 셀 렌더: 숫자면 점수칩(클릭→결과), null이면 –
-        const _cell=(sc)=>{
+        // [0615] 점수 클릭 → 결과 페이지 직행 (누적현황 거치지 않음)
+        const vDeck=_progVocabDeckIdFromObj(id)||'';
+        const _resUrl=(subj,stage)=>{
+            let u='student.html?preview='+encodeURIComponent(id)+'&result='+subj+'&stage='+stage;
+            if(subj==='reading') u+='&n='+unitNo;
+            else if(subj==='grammar') u+='&n='+chapterNo;
+            else if(subj==='vocab') u+='&n='+vDayNo+'&deck='+encodeURIComponent(vDeck)+'&hpd=1';
+            return u;
+        };
+        const _open=(subj,stage)=>`window.open('${_resUrl(subj,stage)}','_blank')`;
+        // 점수 셀 렌더: 숫자면 점수칩(클릭→결과 직행), null이면 –
+        const _cell=(sc, subj, stage)=>{
             if(sc===null||sc===undefined) return `<td style="text-align:center;color:var(--text3)">–</td>`;
             const pass=sc>=80;
             const bg=pass?'var(--green-light)':'#FEF3C7';
             const fg=pass?'var(--green)':'#92400E';
-            return `<td style="text-align:center"><span onclick="${openCum}" title="클릭하여 결과 보기" style="display:inline-block;padding:2px 8px;background:${bg};color:${fg};border-radius:4px;font-weight:700;font-size:12px;cursor:pointer">${sc}</span></td>`;
+            return `<td style="text-align:center"><span onclick="${_open(subj,stage)}" title="결과 페이지 열기" style="display:inline-block;padding:2px 8px;background:${bg};color:${fg};border-radius:4px;font-weight:700;font-size:12px;cursor:pointer">${sc}</span></td>`;
         };
         const rSelf=_progReadingScore(id,s,unitNo,'self');
         const rExam=_progReadingScore(id,s,unitNo,'exam');
@@ -3455,13 +3478,13 @@ function tabProgress(){
                         <div style="font-size:11px;color:var(--text3);margin-top:2px">${(s.days||[]).join('·')}반 · ${dStr} 학습일 · ${bookName}</div>
                     </div>
                 </div>
-                <span class="tag tag-green" style="cursor:pointer" onclick="${openCum}" title="누적현황·결과 보기">NEXT · ${label} →</span>
+                <span class="tag tag-green" style="cursor:pointer" onclick="openProgressResult('${id}')" title="누적현황 전체 보기">NEXT · ${label} →</span>
             </div>
             <table class="tbl" style="font-size:12px"><thead><tr>
                 <th>날짜</th><th>리딩 셀프</th><th>리딩 실전</th><th>문법 셀프</th><th>문법 실전</th><th>단어 셀프</th><th>단어 실전</th>
             </tr></thead><tbody><tr>
                 <td style="font-weight:600">${dStr}</td>
-                ${_cell(rSelf)}${_cell(rExam)}${_cell(gSelf)}${_cell(gExam)}${_cell(vSelf)}${_cell(vExam)}
+                ${_cell(rSelf,'reading','self')}${_cell(rExam,'reading','exam')}${_cell(gSelf,'grammar','self')}${_cell(gExam,'grammar','exam')}${_cell(vSelf,'vocab','self')}${_cell(vExam,'vocab','exam')}
             </tr></tbody></table>
         </div>`;
     };

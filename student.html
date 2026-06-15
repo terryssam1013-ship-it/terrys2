@@ -9552,7 +9552,32 @@ window.addEventListener('DOMContentLoaded',async()=>{
                 return;
             }
         }
-        render();return;
+        render();
+        // [0615] 어드민 학습현황 → 점수 클릭 시 결과 페이지 직행.
+        //   ?result=<reading|grammar|vocab>&n=<번호>&stage=<self|exam>[&deck=&day=&hpd=]
+        //   누적현황을 거치지 않고 그 과목 결과 화면을 바로 연다.
+        try{
+            const _rs=(location.search||'');
+            const _g=(k)=>{ const m=_rs.match(new RegExp('[?&]'+k+'=([^&]+)')); return m?decodeURIComponent(m[1]):null; };
+            const _res=_g('result');
+            if(_res){
+                const _n=parseInt(_g('n'))||0;
+                const _stage=_g('stage')||'self';
+                setTimeout(()=>{
+                  try{
+                    if(_res==='reading'){
+                        openUnit('unit'+_n, _stage);
+                    } else if(_res==='grammar'){
+                        if(_stage==='exam') openGrammarExamResult(null,_n); else openGrammarSelfResult(null,_n);
+                    } else if(_res==='vocab'){
+                        const _deck=_g('deck'), _hpd=parseInt(_g('hpd'))||1;
+                        if(_stage==='exam') openVocabExam(_deck,_n,_hpd); else openVocabSummary(_deck,_n,_hpd);
+                    }
+                  }catch(e){ console.warn('[결과직행] 실패',e); }
+                }, 300);
+            }
+        }catch(e){}
+        return;
     }
     const u=getUser();if(!u||u.role==='admin'){window.location.href='login.html';return;}
     // 📡 다른 기기에서 학습한 진도가 있으면 받아와서 적용 (학원 태블릿 ↔ 집 폰 동기화)
