@@ -1856,8 +1856,13 @@ function escU(s){
         .replace(/\x01u\x01/g,'</u>');
 }
 
+// [0615] 어드민 학습현황 → 미리보기를 누적현황 탭으로 바로 열기 위한 진입 파라미터.
+//   ?tab=cumulative 일 때만 첫 탭을 누적현황(month)으로. 없으면 기존과 100% 동일(week).
+//   ⚠️ 일정 계산(renderSchedule) 로직은 일절 건드리지 않음 — 첫 표시 탭만 바꿈.
+let _initSchedTab='week';
+try{ if(/[?&]tab=cumulative/.test(location.search||'')) _initSchedTab='month'; }catch(e){}
 let state={
-    menu:'reading',schedTab:'week',cumulativeTab:'reading',view:'dashboard',
+    menu:'reading',schedTab:_initSchedTab,cumulativeTab:'reading',view:'dashboard',
     unit:null,articleIdx:null,currentArticle:null,
     answers:{},startTime:null,showResults:false,resultExpanded:false,
     vocabLearnMode:null,vocabLearnIdx:0,vocabLearnFlipped:false,vocabSelectedWord:null,vocabViewedIdx:new Set(),

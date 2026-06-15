@@ -3277,39 +3277,129 @@ function tabUnitDetail(){
     </div>`;
 }
 
-/* ========== 학습현황 ========== */
+/* ========== 학습현황 (0615 재구성) ==========
+   요구사항:
+   - 오늘 학습일인 학생을 맨 위 그룹, '다음 학습일' 학생을 그 아래 그룹
+   - 날짜가 바뀌면 자동으로 그룹이 한 칸씩 이동(지난 학습일 그룹은 사라짐)
+   - 각 단계 NEXT가 떠 있는(=단계를 끝낸) 학생만 노출
+   - 학생 행/점수를 클릭하면 그 학생 미리보기를 '누적현황' 탭으로 열기
+   ⚠️ student.html의 일정 계산 로직은 건드리지 않음. 여기선 시작일+요일로 학습일만 추정.
+*/
+const _DAY_KOR=['일','월','화','수','목','금','토'];
+function _progDateISO(d){ const z=new Date(d); z.setHours(0,0,0,0);
+    return z.getFullYear()+'-'+String(z.getMonth()+1).padStart(2,'0')+'-'+String(z.getDate()).padStart(2,'0'); }
+// 학생의 수업요일(s.days, 예 ['월','수','금']) → 요일 인덱스 Set
+function _progClassDayIdx(s){
+    const set=new Set();
+    (s.days||[]).forEach(k=>{ const i=_DAY_KOR.indexOf(k); if(i>=0) set.add(i); });
+    return set;
+}
+// startDate부터 시작해 수업요일에 해당하는 날짜를 limit개까지 생성 (학습일 시퀀스)
+function _progLearnDates(s, limit){
+    const out=[]; if(!s.startDate) return out;
+    const cd=_progClassDayIdx(s); if(cd.size===0) return out;
+    let d=new Date(s.startDate+'T00:00:00'); d.setHours(0,0,0,0);
+    let guard=0;
+    while(out.length<limit && guard<400){
+        if(cd.has(d.getDay())) out.push(new Date(d));
+        d.setDate(d.getDate()+1); guard++;
+    }
+    return out;
+}
+// 학생의 오늘 기준 위치 분류: 'today'(오늘이 학습일) | 'next'(다음 학습일이 미래) | null
+function _progBucketOf(s, todayISO){
+    const dates=_progLearnDates(s, 60);
+    if(dates.length===0) return {bucket:null};
+    // 오늘이 학습일인가?
+    const todayIdx=dates.findIndex(d=>_progDateISO(d)===todayISO);
+    if(todayIdx>=0) return {bucket:'today', dateISO:todayISO, learnNo:todayIdx};
+    // 오늘 이후 가장 가까운 학습일 = '다음 학습일'
+    const nextIdx=dates.findIndex(d=>_progDateISO(d) > todayISO);
+    if(nextIdx>=0) return {bucket:'next', dateISO:_progDateISO(dates[nextIdx]), learnNo:nextIdx};
+    return {bucket:null};
+}
+// NEXT가 떠 있는 상태인지 = 그 학생이 현재 단계(셀프/실전)를 끝낸 상태인지
+//   rl_flow_<id> 의 phase로 판정. 셀프 완료(phase가 exam 대기) 또는 실전/주간 완료시 NEXT 노출.
+//   (학생 화면의 NEXT 개방 조건과 일치시키되, admin은 점수 데이터까지 재계산하지 않고 phase 기준으로 가볍게 판정)
+function _progFlow(id){
+    try{ const raw=RL_STORE.get('rl_flow_'+id); if(raw) return JSON.parse(raw); }catch(e){}
+    return {phase:'selfcheck'};
+}
+function _progNextReady(id){
+    // phase==='exam' → 셀프 끝내고 실전 대기(NEXT 눌러 넘어온 상태) → 노출
+    // weeklyStage 존재 → 주간평가 단계 진입(역시 NEXT로 넘어온 상태) → 노출
+    const fl=_progFlow(id);
+    if(fl.weeklyStage) return {ready:true, label:'주간평가 '+(fl.weeklyStage==='exam'?'실전':'훈련')};
+    if(fl.phase==='exam') return {ready:true, label:'실전 대기'};
+    return {ready:false, label:'셀프 진행중'};
+}
+function _progDayIndex(id){ try{ const n=parseInt(RL_STORE.get('rl_dayindex_'+id)); return isNaN(n)?0:n; }catch(e){ return 0; } }
+
 function tabProgress(){
     const users=LS.g('users')||{};
     const students=Object.entries(users).filter(([k,v])=>v.role==='student');
-    const progress=LS.g('progress')||{};
-    return `<h2>학습현황</h2><div class="page-desc">학생별 학습 진행과 점수를 확인합니다</div>
-    ${students.length===0?'<div class="card"><div class="empty">학생이 없습니다</div></div>':
-    students.map(([id,s])=>{
-        const bookName=s.textbooks?.reading;
-        const sp=(progress[id]||[]).slice().reverse();
-        const done=sp.filter(p=>p.correctAnswers>0).length;
-        const avg=sp.length?Math.round(sp.reduce((a,p)=>a+(p.totalQuestions?p.correctAnswers/p.totalQuestions*100:0),0)/sp.length):0;
-        return `<div class="card">
-            <div class="flex flex-between mb-16">
-                <div><span style="font-weight:800;font-size:17px">${s.name}</span> <span class="tag tag-blue">${s.level}</span>
-                <span style="font-size:13px;color:var(--text3);margin-left:8px">${bookName||'-'} · ${(s.days||[]).join('·')}반</span></div>
-                <div class="flex flex-gap">
-                    <span class="tag tag-green">완료 ${done}회</span>
-                    <span class="tag tag-amber">평균 ${avg}점</span>
+    const today=new Date(); today.setHours(0,0,0,0);
+    const todayISO=_progDateISO(today);
+    const todayKor=_DAY_KOR[today.getDay()];
+
+    // 학생을 today / next 그룹으로 분류 (NEXT 도달자만)
+    const todayGroup=[], nextGroup=[];
+    students.forEach(([id,s])=>{
+        const b=_progBucketOf(s, todayISO);
+        if(b.bucket!=='today' && b.bucket!=='next') return;
+        const nx=_progNextReady(id);
+        if(!nx.ready) return;                 // 단계 NEXT 안 떴으면 노출 안 함
+        const row={id, s, dateISO:b.dateISO, learnNo:b.learnNo, label:nx.label};
+        if(b.bucket==='today') todayGroup.push(row); else nextGroup.push(row);
+    });
+
+    const _card=(row, faded)=>{
+        const {id,s,dateISO,label}=row;
+        const di=_progDayIndex(id);
+        const initials=(s.name||'').slice(0,2);
+        const bookName=s.textbooks?.reading||'-';
+        const grammarName=s.textbooks?.grammar||'-';
+        const vocabName=s.textbooks?.vocab||'-';
+        // 진도 라벨 (dayIndex 기반 추정: Unit/Ch/DAY = 시작+di). 시작값은 student가 가진 startUnit 등 — 없으면 dayIndex+1로 표기
+        const unitNo=(s.startUnit||1)+di;
+        const dStr=dateISO.slice(5).replace('-','/');
+        // 점수 클릭 → 미리보기를 누적현황 탭으로 열기
+        const openCum=`openProgressResult('${id}')`;
+        return `<div class="card" style="margin-bottom:8px;${faded?'opacity:.85':''}">
+            <div class="flex flex-between" style="align-items:center;margin-bottom:10px">
+                <div class="flex flex-gap" style="align-items:center">
+                    <div style="width:34px;height:34px;border-radius:50%;background:var(--blue-light);color:var(--blue);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">${initials}</div>
+                    <div>
+                        <span style="font-weight:800;font-size:15px">${s.name}</span>
+                        <span style="font-size:12px;color:var(--text3);margin-left:6px">${bookName} · ${grammarName} · ${vocabName}</span>
+                        <div style="font-size:11px;color:var(--text3);margin-top:2px">${(s.days||[]).join('·')}반 · ${dStr} 학습일</div>
+                    </div>
                 </div>
+                <span class="tag tag-green" style="cursor:pointer" onclick="${openCum}" title="누적현황·결과 보기">NEXT · ${label} →</span>
             </div>
-            ${sp.length===0?'<p style="color:var(--text3);font-size:13px">아직 학습 기록이 없습니다</p>':
-            `<table class="tbl"><thead><tr><th>날짜</th><th>Unit</th><th>항목</th><th>상태</th><th>점수</th><th>소요시간</th></tr></thead><tbody>
-            ${sp.map(p=>`<tr>
-                <td>${new Date(p.timestamp).toLocaleDateString('ko-KR')}</td>
-                <td>${(p.unit||'-').toString().replace('unit','Unit ')}</td>
-                <td>${p.title}</td>
-                <td>${p.correctAnswers>0?'<span class="status-pill tag-green">완료</span>':'<span class="status-pill tag-amber">미완료</span>'}</td>
-                <td style="font-weight:700">${p.totalQuestions>0?Math.round(p.correctAnswers/p.totalQuestions*100)+'점':'-'}</td>
-                <td>${p.timeSpent?Math.floor(p.timeSpent/60)+'분 '+p.timeSpent%60+'초':'-'}</td>
-            </tr>`).join('')}</tbody></table>`}
+            <table class="tbl" style="font-size:12px"><thead><tr>
+                <th>날짜</th><th>리딩 셀프</th><th>리딩 실전</th><th>문법 셀프</th><th>문법 실전</th><th>단어 셀프</th><th>단어 실전</th>
+            </tr></thead><tbody><tr>
+                <td style="font-weight:600">${dStr}</td>
+                ${['rSelf','rExam','gSelf','gExam','vSelf','vExam'].map(()=>`<td style="text-align:center"><span onclick="${openCum}" style="cursor:pointer;color:var(--blue);font-weight:600" title="누적현황에서 점수·결과 보기">보기</span></td>`).join('')}
+            </tr></tbody></table>
         </div>`;
-    }).join('')}`;
+    };
+
+    const groupBlock=(title, sub, rows, faded)=>`
+        <div style="margin:18px 0 8px;display:flex;align-items:center;gap:8px">
+            <span class="tag ${faded?'tag-gray':'tag-blue'}" style="font-size:13px">${title}</span>
+            <span style="font-size:12px;color:var(--text3)">${sub} · ${rows.length}명</span>
+        </div>
+        ${rows.length===0?'<p style="color:var(--text3);font-size:13px;padding:6px 2px">해당 학생이 없습니다 (NEXT 도달 학생만 표시)</p>':rows.map(r=>_card(r,faded)).join('')}`;
+
+    const nextDateLabel = nextGroup.length ? nextGroup[0].dateISO.slice(5).replace('-','/') : '';
+
+    return `<h2>학습현황</h2><div class="page-desc">오늘 ${todayISO} (${todayKor}) · NEXT 도달 학생만 표시 · 클릭 시 누적현황·결과</div>
+    ${students.length===0?'<div class="card"><div class="empty">학생이 없습니다</div></div>':`
+        ${groupBlock('오늘 · '+todayISO.slice(5).replace('-','/')+'('+todayKor+') 학습일', '단계 완료(NEXT)', todayGroup, false)}
+        ${groupBlock('다음 · '+(nextDateLabel||'-')+' 학습일', '단계 완료(NEXT)', nextGroup, true)}
+    `}`;
 }
 
 /* ========== 설정 ========== */
@@ -5968,6 +6058,12 @@ async function previewStudent(id){
         if(window.RLStorage && RLStorage.flush) await RLStorage.flush();
     }catch(e){}
     window.open('student.html?preview='+encodeURIComponent(id),'_blank');
+}
+// [0615] 학습현황에서 점수/NEXT 클릭 → 그 학생 미리보기를 '누적현황' 탭으로 바로 열기.
+//   결과 페이지 로직은 student.html에 이미 검증돼 있으므로 그대로 재사용(중복 구현 안 함).
+async function openProgressResult(id){
+    try{ if(window.RLStorage && RLStorage.flush) await RLStorage.flush(); }catch(e){}
+    window.open('student.html?preview='+encodeURIComponent(id)+'&tab=cumulative','_blank');
 }
 // ========================================================================
 // 💾 백업 시스템 — 매일 1회 1클릭 백업, Dropbox 폴더 활용
