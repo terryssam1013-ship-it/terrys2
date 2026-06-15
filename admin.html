@@ -3379,8 +3379,11 @@ function _progVocabScore(id, s, dayNo, stage){
     // 학생 실제 키 우선 (vocab-learn 저장 규칙: base_<id>), 없으면 base 단독
     let obj=_progReadJSON(base+'_'+id) || _progReadJSON(base);
     if(!obj) return null;
-    // 이 DAY 묶음 키: 아무 deckId든 '_<DAY>_1'로 끝나는 키
-    const k=Object.keys(obj).find(kk=>kk.endsWith('_'+dayNo+'_1'));
+    // 이 DAY 묶음 키: '_<DAY>_1'로 끝나는 키. 키에 숨은 문자가 있을 수 있어
+    //   정규식(끝부분 + 트림)으로 견고하게 매칭한다.
+    const re=new RegExp('_'+dayNo+'_1\\s*$');
+    let k=Object.keys(obj).find(kk=>re.test(kk));
+    if(!k) k=Object.keys(obj).find(kk=>kk.trim().endsWith('_'+dayNo+'_1'));
     if(!k) return null;
     const rec=obj[k];
     if(!rec) return null;
