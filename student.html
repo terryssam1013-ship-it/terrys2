@@ -3598,9 +3598,27 @@ function renderFlowWeek(ctx){
             // [진단 0612] 공용 행 통일 후에도 HW가 null이면 데이터/세션 빌드 문제 — 즉시 드러내기
             subjects.forEach(x=>{ if(!x.hw) console.error('[dayIndex] ★ HW null — 카드 데이터 누락:', x.key, '(공용 행 결정 로그 [dayIndex/공용행] 확인)'); });
             const _ph=(flow&&flow.phase)||'selfcheck';
+            const _selfDoneOf=(key)=>{ try{
+                if(key==='reading') return _readingStageComplete('self');
+                if(key==='grammar') return _grammarStageComplete('self');
+                if(key==='vocab')   return _vocabStageComplete('self');
+            }catch(e){} return false; };
+            const _examDoneOf=(key)=>{ try{
+                if(key==='reading') return _readingStageComplete('exam');
+                if(key==='grammar') return _grammarStageComplete('exam');
+                if(key==='vocab')   return _vocabStageComplete('exam');
+            }catch(e){} return false; };
             subjects.forEach(x=>{
                 if(x.st==='weekly') return;            // 주간평가는 weeklyStage로 따로 처리
-                x.st = (_ph==='exam') ? 'exam' : 'self';
+                if(_ph==='exam'){
+                    // 실전 단계: 실전까지 끝낸 과목은 done, 아니면 exam(실전 진행)
+                    // [버그 수정 0612] dayIndex ON에서도 실전 완료 감지 → examAllDone 성립 → 다음날 NEXT 개방
+                    x.st = _examDoneOf(x.key) ? 'done' : 'exam';
+                } else {
+                    // 셀프 단계: 셀프 끝낸 과목은 exam(셀프완료·실전대기), 아니면 self(셀프 진행)
+                    // [버그 수정 0612] 셀프를 다 푼 과목을 self에 가두지 않음 → 세 과목 완료 시 selfAllDone 성립 → NEXT 개방
+                    x.st = _selfDoneOf(x.key) ? 'exam' : 'self';
+                }
             });
         }catch(e){ console.warn('[dayIndex] 단계통일 실패',e); }
     }
