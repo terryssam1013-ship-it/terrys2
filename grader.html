@@ -242,15 +242,41 @@ async function fetchExam(slug){
 async function listExamsRaw(){
   try{ return await (await fetch(FB+"/grader_exams.json")).json(); }catch(e){ return null; }
 }
-// 시험 정렬: 수동 지정 순서(order)가 있으면 그 순서, 없으면 최신 저장순.
-// order는 작을수록 위. order 없는 항목은 뒤로 보내고 savedAt 최신순.
+// 제목에서 학년/학교를 뽑아낸다. 예: "중3_석우중3_기출유사_2025"
+//  - 학년: 맨 앞 '중1/중2/중3' 또는 '중 3' 등 → 숫자. 없으면 큰 값(뒤로)
+//  - 학교: 두 번째 토큰(보통 'OO중') → 학교별 그룹화 기준
+function examKey(e){
+  const t=(e.title||"");
+  const parts=t.split(/[_\s]+/).filter(Boolean);
+  // 학년
+  let grade=99;
+  const gm=t.match(/중\s*([1-3])/);
+  if(gm) grade=parseInt(gm[1],10);
+  else if(/고\s*([1-3])/.test(t)) grade=10+parseInt(t.match(/고\s*([1-3])/)[1],10);
+  // 학교: 'OO중' 또는 'OO고' 포함 토큰 중 학년표기가 아닌 것
+  let school="";
+  for(const p of parts){
+    if(/(중|고)등?학교?\d?$/.test(p) && !/^중[1-3]$/.test(p)){ school=p; break; }
+    if(/[가-힣]{2,}(중|고)\d?$/.test(p) && !/^중[1-3]$/.test(p)){ school=p; break; }
+  }
+  // 학교 토큰을 못 찾으면 두 번째 토큰을 학교로 간주
+  if(!school && parts.length>=2) school=parts[1];
+  return {grade, school, title:t};
+}
+// 시험 정렬:
+//  1) 수동 순서(order)가 지정돼 있으면 그 순서가 최우선 (사용자가 ▲▼로 바꾼 것)
+//  2) 기본은 학년(중1<중2<중3, 중3이 가장 아래) → 학교명 → 제목 순으로 자동 정렬
 function examSort(a,b){
   const ao=(typeof a.order==="number")?a.order:null;
   const bo=(typeof b.order==="number")?b.order:null;
   if(ao!=null && bo!=null) return ao-bo;
   if(ao!=null) return -1;
   if(bo!=null) return 1;
-  return (b.savedAt||"").localeCompare(a.savedAt||"");
+  const ka=examKey(a), kb=examKey(b);
+  if(ka.grade!==kb.grade) return ka.grade-kb.grade;          // 중3을 아래로
+  const sc=ka.school.localeCompare(kb.school,"ko");          // 학교별 그룹
+  if(sc!==0) return sc;
+  return ka.title.localeCompare(kb.title,"ko");              // 제목 이름순
 }
 </script>
 <script>
