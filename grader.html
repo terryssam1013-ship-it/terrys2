@@ -239,6 +239,16 @@ async function fetchExam(slug){
   try{ return await (await fetch(FB+"/grader_exams/"+encodeURIComponent(slug)+".json")).json(); }
   catch(e){ return null; }
 }
+// 무거운 미디어(PDF·해설이미지·문제이미지)는 필요할 때만 따로 불러온다.
+const _mediaCache={};
+async function fetchMedia(slug){
+  if(_mediaCache[slug]) return _mediaCache[slug];
+  try{
+    const m=await (await fetch(FB+"/grader_media/"+encodeURIComponent(slug)+".json")).json();
+    _mediaCache[slug]=m||{};
+    return _mediaCache[slug];
+  }catch(e){ return {}; }
+}
 async function listExamsRaw(){
   try{ return await (await fetch(FB+"/grader_exams.json")).json(); }catch(e){ return null; }
 }
@@ -901,38 +911,42 @@ async function saveExam(){
   const empty=A_ANSWERS.filter(q=>q.type==="mc"?!q.a.length:!q.aText).map(q=>q.n);
   if(empty.length && !confirm("정답이 비어 있는 문항: "+empty.join(", ")+"번\n(이 문항들은 채점에서 제외됩니다) 그래도 저장할까요?")) return;
   const slug=slugify(A_TITLE);
-  // 원본 PDF는 관리자 미리보기용으로 그대로 저장한다.
-  // 대신 해설/문제지 이미지는 용량이 크므로, 총 용량이 한도를 넘으면
-  // 이미지 화질을 단계적으로 낮추거나 떼어내 저장이 실패하지 않게 한다.
-  const buildPayload=(opt={})=>{
-    const p={
-      title:A_TITLE, slug, savedAt:new Date().toISOString(),
-      n:A_ANSWERS.length, visible:true, pdf:A_PDF||"",
-      explImgs: opt.dropExpl ? [] : (A_EXPL_IMGS||[]),
-      answers:A_ANSWERS.map(q=>({n:q.n,type:q.type,a:q.a,aText:q.aText,expl:q.expl||"",
-        img: opt.dropQImg ? "" : (A_QIMGS[q.n]||"")}))
-    };
-    return p;
+  // ⚡ 학생이 빠르게 열 수 있도록 데이터를 둘로 나눠 저장한다.
+  //   - 본체(grader_exams/{slug}) : 제목·정답·해설텍스트만 → 가벼움(학생이 이것만 받음)
+  //   - 미디어(grader_media/{slug}) : 원본 PDF·해설 이미지·문제지 이미지 → 무거움
+  //                                   (선생님 미리보기 / 학생 채점 후 해설 볼 때만 따로 받음)
+  const lightAnswers=A_ANSWERS.map(q=>({n:q.n,type:q.type,a:q.a,aText:q.aText,expl:q.expl||""}));
+  const light={
+    title:A_TITLE, slug, savedAt:new Date().toISOString(),
+    n:A_ANSWERS.length, visible:true,
+    hasMedia: !!(A_PDF || (A_EXPL_IMGS&&A_EXPL_IMGS.length) || Object.keys(A_QIMGS).length)
   };
+  // 미디어(무거움). 용량이 너무 크면 단계적으로 줄임.
+  const buildMedia=(opt={})=>({
+    pdf: opt.dropPdf ? "" : (A_PDF||""),
+    explImgs: opt.dropExpl ? [] : (A_EXPL_IMGS||[]),
+    qimgs: opt.dropQImg ? {} : (A_QIMGS||{})
+  });
   const sizeMB=(o)=>JSON.stringify(o).length/1048576;
-  const LIMIT=8; // Firebase 한 번 쓰기 안전 한도(대략)
+  const LIMIT=9;
+  let media=buildMedia();
+  let droppedQ=false, droppedExpl=false;
+  if(sizeMB(media)>LIMIT){ media=buildMedia({dropQImg:true}); droppedQ=true; }     // 문제지 이미지부터
+  if(sizeMB(media)>LIMIT){ media=buildMedia({dropQImg:true, dropExpl:true}); droppedExpl=true; } // 해설도
 
-  let payload=buildPayload();
-  // 1차: 그대로. 너무 크면 문제지 이미지부터 제거(채점·해설엔 영향 없음)
-  if(sizeMB(payload)>LIMIT){
-    payload=buildPayload({dropQImg:true});
-  }
-  // 그래도 크면 해설 이미지도 제거 (원본 PDF는 유지 → 관리자가 PDF로 해설 확인 가능)
-  let droppedExpl=false;
-  if(sizeMB(payload)>LIMIT){
-    payload=buildPayload({dropQImg:true, dropExpl:true});
-    droppedExpl=true;
-  }
-  const body=JSON.stringify(payload);
   const box=document.createElement("div");
   try{
-    const r=await fetch(FB+"/grader_exams/"+encodeURIComponent(slug)+".json",{method:"PUT",body});
-    if(!r.ok) throw new Error("HTTP "+r.status);
+    // 1) 가벼운 본체 저장 (학생 로딩 속도 핵심)
+    const r1=await fetch(FB+"/grader_exams/"+encodeURIComponent(slug)+".json",
+      {method:"PUT",body:JSON.stringify(light)});
+    if(!r1.ok) throw new Error("HTTP "+r1.status);
+    // 2) 무거운 미디어는 별도 키에 저장 (실패해도 채점은 가능)
+    if(light.hasMedia){
+      try{
+        await fetch(FB+"/grader_media/"+encodeURIComponent(slug)+".json",
+          {method:"PUT",body:JSON.stringify(media)});
+      }catch(e){ /* 미디어 저장 실패는 치명적 아님 */ }
+    }
     if(droppedExpl){ /* 안내는 저장 후 별도로 */ }
     const sUrl=location.origin+location.pathname+"?set="+encodeURIComponent(slug);
     const rUrl=location.origin+location.pathname+"?mode=results";
@@ -961,14 +975,16 @@ let S_EXAM=null, S_SLUG="", S_STUDENT="", S_SEL={}, graded=false;
 function getStudentName(){
   try{
     const p=new URLSearchParams(location.search).get('student');
-    if(p) return p;
+    if(p && p.trim()) return p.trim();   // 빈 ?student= 는 무시
     return sessionStorage.getItem('terrys_grader_student')||'';
   }catch(e){ return ''; }
 }
 function renderStudentStart(){
-  const directSet=new URLSearchParams(location.search).get('set');
+  const directSet=(new URLSearchParams(location.search).get('set')||"").trim();
   S_STUDENT=getStudentName();
   if(S_STUDENT){ directSet?openStudentExam(directSet):listStudentExams(); return; }
+  $("topTitle").textContent="답안 입력";
+  $("topSub").textContent="종이 시험지를 보고 답만 입력하세요";
   $("app").innerHTML=`<div class="card">
       <div class="label">이름</div>
       <input type="text" id="nm" placeholder="이름을 입력하세요" autocomplete="off">
@@ -985,7 +1001,12 @@ function setStuName(directSet){
 
 async function listStudentExams(){
   $("app").innerHTML=`<div class="state"><div class="spin"></div>시험 목록 불러오는 중…</div>`;
-  const data=await listExamsRaw();
+  let data=null;
+  try{ data=await listExamsRaw(); }catch(e){ data=null; }
+  if(data===null){
+    $("app").innerHTML=`<div class="state"><div class="big">⚠</div>목록을 불러오지 못했어요.<br><span style="font-size:13px;color:var(--soft)">인터넷 연결을 확인하고 새로고침 해주세요.</span><br><button class="btn btn-main" style="margin-top:12px" onclick="listStudentExams()">다시 시도</button></div>`;
+    return;
+  }
   const exams=[];
   if(data&&typeof data==="object") for(const k in data){ const e=data[k]; if(e && (e.answers||e.kind==="passage") && e.visible!==false) exams.push({slug:k,...e}); }
   exams.sort(examSort);
@@ -1032,8 +1053,8 @@ function renderAnswerSheet(){
   A.forEach((q,i)=>{
     const multi = q.type==="mc" && q.a.length>1;
     h+=`<div class="qrow" id="qr${i}"><div class="qnum">${q.n}번${multi?'<span class="multi-tag">복수</span>':''}</div>`;
-    // 문제 이미지는 채점 후에만 보여줌 (입력 중에는 숨김). 숨겨둔 채로 심어둠.
-    if(q.img) h+=`<img class="qimg" id="qimg${i}" src="${q.img}" alt="${q.n}번 문제" loading="lazy" style="display:none">`;
+    // 문제 이미지는 채점 후에만, 그때 미디어에서 따로 불러와 채워 넣는다(입력 속도 우선).
+    h+=`<img class="qimg" id="qimg${i}" alt="${q.n}번 문제" loading="lazy" style="display:none">`;
     if(q.type==="mc"){
       h+=`<div class="opts">`;
       for(let j=0;j<5;j++) h+=`<button class="opt${multi?' multi':''}" id="o${i}_${j}" onclick="tap(${i},${j},${multi})">${CIRC[j]}</button>`;
@@ -1168,13 +1189,28 @@ function gradeNow(){
   // 채점 후엔 한 문항씩 넓게 보이도록 1열로
   const grid=$("ansgrid"); if(grid){ grid.style.gridTemplateColumns="1fr"; }
   $("ansgrid").insertAdjacentHTML("beforebegin",`<div class="card" style="background:#fffafa;border-color:#f3c0c2"><b style="color:var(--bad)">📝 채점 결과 — 틀린 문제부터 보여드려요 (각 문항 아래 정답·해설)</b></div>`);
-  // 해설이 그림으로 박힌 PDF면, 해설 페이지 전체 이미지를 결과 맨 아래에 보여줌
-  if(S_EXAM.explImgs && S_EXAM.explImgs.length){
-    const eh=`<div class="card"><div style="font-weight:700;margin-bottom:10px">📄 해설 (전체 보기)</div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        ${S_EXAM.explImgs.map(src=>`<img src="${src}" style="width:100%;border:1px solid var(--line);border-radius:8px" loading="lazy">`).join("")}
-      </div></div>`;
-    $("ansgrid").insertAdjacentHTML("afterend", eh);
+  // 해설/문제 이미지는 무거운 미디어라 채점 후에 한 번에 따로 불러온다
+  //  (시험 푸는 속도엔 영향 없음)
+  if(S_EXAM.hasMedia){
+    const ph=`<div class="card" id="explHost"><div style="font-weight:700;margin-bottom:10px">📄 해설 (전체 보기)</div>
+      <div class="state" style="padding:14px"><div class="spin"></div>해설·문제 이미지 불러오는 중…</div></div>`;
+    $("ansgrid").insertAdjacentHTML("afterend", ph);
+    fetchMedia(S_SLUG).then(m=>{
+      // 1) 각 문항 문제 이미지 채워넣기
+      const qi=(m&&m.qimgs)||{};
+      A.forEach((q,i)=>{
+        const el=$("qimg"+i);
+        if(el && qi[q.n]){ el.src=qi[q.n]; el.style.display="block"; }
+      });
+      // 2) 해설 페이지 전체 이미지
+      const host=$("explHost"); if(!host) return;
+      const imgs=(m&&m.explImgs)||[];
+      if(!imgs.length){ host.remove(); return; }
+      host.innerHTML=`<div style="font-weight:700;margin-bottom:10px">📄 해설 (전체 보기)</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${imgs.map(src=>`<img src="${src}" style="width:100%;border:1px solid var(--line);border-radius:8px" loading="lazy">`).join("")}
+        </div>`;
+    });
   }
   document.querySelector(".dock").innerHTML=`<button class="btn btn-ghost" onclick="renderAnswerSheet()">다시 풀기</button>
     <button class="btn btn-main" onclick="listStudentExams()">다른 시험</button>`;
@@ -1201,7 +1237,7 @@ async function renderResults(){
   $("app").innerHTML=`<div class="state"><div class="spin"></div>시험 목록 불러오는 중…</div>`;
   const data=await listExamsRaw();
   const exams=[];
-  if(data&&typeof data==="object") for(const k in data){ const e=data[k]; if(e && (e.answers||e.kind==="passage")) exams.push({slug:k,title:e.title,n:e.kind==="passage"?"본문":(e.n||e.answers.length),kind:e.kind||"mc",savedAt:e.savedAt,order:e.order,answers:e.answers||[],visible:e.visible!==false}); }
+  if(data&&typeof data==="object") for(const k in data){ const e=data[k]; if(e && (e.answers||e.kind==="passage")) exams.push({slug:k,title:e.title,n:e.kind==="passage"?"본문":(e.n||e.answers.length),kind:e.kind||"mc",savedAt:e.savedAt,order:e.order,hasMedia:e.hasMedia,answers:e.answers||[],visible:e.visible!==false}); }
   exams.sort(examSort);
   if(!exams.length){ $("app").innerHTML=`<div class="state"><div class="big">🗒️</div>등록된 시험이 없습니다.</div>`; return; }
   R_DATA.exams=exams;
@@ -1246,14 +1282,22 @@ async function previewExam(slug){
   const head=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px">
       <b style="font-size:15px">${esc(e.title)}</b>
       <button class="btn btn-ghost" style="padding:6px 12px" onclick="this.closest('div[style*=fixed]').remove()">닫기 ✕</button></div>`;
+  // 원본 PDF는 무거운 미디어라 따로 불러온다.
+  let pdfData="";
+  if(e.hasMedia){
+    box.innerHTML=head+`<div class="state"><div class="spin"></div>원본 PDF 불러오는 중…</div>`;
+    const m=await fetchMedia(slug);
+    pdfData=(m&&m.pdf)||"";
+  }
   // 원본 PDF가 저장돼 있으면 그대로 보여줌
-  if(e.pdf){
+  if(pdfData){
+    const e_pdf=pdfData;
     // iframe은 브라우저(특히 크롬)가 보안상 인라인 PDF를 막는 경우가 있어
     // PDF.js로 각 페이지를 캔버스에 직접 그려 항상 보이게 한다.
-    let blobUrl=e.pdf;
+    let blobUrl=e_pdf;
     try{
-      if(/^data:/.test(e.pdf)){
-        const base64=e.pdf.split(",")[1]||"";
+      if(/^data:/.test(e_pdf)){
+        const base64=e_pdf.split(",")[1]||"";
         const bin=atob(base64); const arr=new Uint8Array(bin.length);
         for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
         const blob=new Blob([arr],{type:"application/pdf"});
@@ -1272,7 +1316,7 @@ async function previewExam(slug){
     // PDF.js 렌더
     (async()=>{
       try{
-        const buf = await (await fetch(e.pdf)).arrayBuffer();
+        const buf = await (await fetch(e_pdf)).arrayBuffer();
         const pdf = await pdfjsLib.getDocument({data:buf}).promise;
         const host=document.getElementById("pdfPv");
         if(!host) return;
@@ -1304,13 +1348,11 @@ async function previewExam(slug){
   const rows=(e.answers||[]).map(q=>{
     const ans = q.type==="mc" ? (q.a||[]).map(x=>CC[x]).join(", ") : esc(q.aText||"");
     return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px">
-      ${q.img?`<img src="${q.img}" style="width:100%;border:1px solid var(--line);border-radius:8px;margin-bottom:8px">`:""}
       <div style="font-weight:700;font-size:13.5px"><span style="color:var(--brand-d)">${q.n}번</span> · 정답: ${ans||"—"} <span style="font-size:11px;color:var(--soft)">(${q.type==="mc"?"객관식":"서술형"})</span></div>
       ${q.expl?`<div style="font-size:12.5px;color:#374151;line-height:1.6;margin-top:6px">${esc(q.expl)}</div>`:""}
     </div>`;
   }).join("");
-  const imgCnt=(e.answers||[]).filter(q=>q.img).length;
-  box.innerHTML=head+`<div style="font-size:12.5px;color:var(--soft);margin-bottom:10px">${(e.answers||[]).length}문항 · 문제 이미지 ${imgCnt}개</div>
+  box.innerHTML=head+`<div style="font-size:12.5px;color:var(--soft);margin-bottom:10px">${(e.answers||[]).length}문항</div>
     <div style="display:flex;flex-direction:column;gap:9px">${rows}</div>`;
 }
 async function deleteStudent(name){
@@ -1369,6 +1411,7 @@ async function deleteExam(slug,title){
   if(!confirm(`'${title}' 시험을 삭제할까요?\n\n정답·문제·학생 결과가 모두 삭제되며 되돌릴 수 없습니다.`)) return;
   try{
     await fetch(FB+"/grader_exams/"+encodeURIComponent(slug)+".json",{method:"DELETE"});
+    await fetch(FB+"/grader_media/"+encodeURIComponent(slug)+".json",{method:"DELETE"}).catch(()=>{});
     await fetch(FB+"/results_grader_"+slug+".json",{method:"DELETE"});
     alert("삭제했습니다.");
     renderResults();
@@ -1641,14 +1684,6 @@ function showExpl(){
       ${q.expl?`<div style="font-size:13px;color:#374151;line-height:1.6;margin-top:6px">${esc(q.expl)}</div>`:""}
     </div>`;
   }).join("");
-  const explImgs=(ex.explImgs&&ex.explImgs.length)?ex.explImgs:[];
-  const explBlock = explImgs.length
-    ? `<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
-         <div style="font-size:13.5px;font-weight:700;color:var(--ink-2);margin-bottom:8px">📄 해설 페이지 (원본)</div>
-         <div style="display:flex;flex-direction:column;gap:10px">
-           ${explImgs.map(src=>`<img src="${src}" style="width:100%;border:1px solid var(--line);border-radius:8px">`).join("")}
-         </div></div>`
-    : "";
   const ov=document.createElement("div");
   ov.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;overflow:auto;padding:16px";
   ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
@@ -1657,8 +1692,22 @@ function showExpl(){
       <b style="font-size:15px">📘 ${esc(ex.title)} — 정답·해설</b>
       <button class="btn btn-ghost" style="padding:6px 12px" onclick="this.closest('div[style*=fixed]').remove()">닫기 ✕</button></div>
     <div style="display:flex;flex-direction:column;gap:9px">${rows}</div>
-    ${explBlock}</div>`;
+    <div id="explImgHost"></div></div>`;
   document.body.appendChild(ov);
+  // 해설 페이지 이미지는 무거운 미디어라 따로 불러온다
+  if(ex.hasMedia){
+    const host=ov.querySelector("#explImgHost");
+    host.innerHTML=`<div class="state" style="padding:14px"><div class="spin"></div>해설 페이지 불러오는 중…</div>`;
+    fetchMedia(ex.slug).then(m=>{
+      const imgs=(m&&m.explImgs)||[];
+      if(!imgs.length){ host.innerHTML=""; return; }
+      host.innerHTML=`<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+         <div style="font-size:13.5px;font-weight:700;color:var(--ink-2);margin-bottom:8px">📄 해설 페이지 (원본)</div>
+         <div style="display:flex;flex-direction:column;gap:10px">
+           ${imgs.map(src=>`<img src="${src}" style="width:100%;border:1px solid var(--line);border-radius:8px">`).join("")}
+         </div></div>`;
+    });
+  }
 }
 </script>
 <script>
