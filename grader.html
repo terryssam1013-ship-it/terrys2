@@ -1,0 +1,1808 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>테리스 실전평가</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  /* canvas + ink */
+  --bg:#eef1f8; --bg2:#e7ebf6; --surface:#ffffff;
+  --ink:#16182a; --ink-2:#3a3f55; --soft:#7b8198; --line:#e7e9f2;
+  /* brand: indigo → violet */
+  --brand:#5b5bf0; --brand-d:#4a44d6; --brand-l:#ececfe; --violet:#8b5cf6;
+  /* semantic */
+  --ok:#0d9f6e; --ok-d:#0a7d57; --ok-l:#dcfaef;
+  --bad:#f43f6b; --bad-d:#d62a55; --bad-l:#ffe7ed;
+  --amber:#f59e0b; --amber-l:#fef3c7; --amber-d:#92560a;
+  --shadow:0 1px 2px rgba(22,24,42,.04), 0 8px 24px -12px rgba(22,24,42,.18);
+  --shadow-lg:0 2px 6px rgba(22,24,42,.06), 0 24px 48px -20px rgba(70,68,214,.32);
+  /* legacy aliases → new palette */
+  --green:var(--ok); --green-d:var(--ok-d); --green-l:var(--ok-l);
+  --orange:var(--amber); --orange-d:var(--amber-d); --orange-l:var(--amber-l);
+}
+*{ -webkit-tap-highlight-color:transparent }
+body{
+  font-family:'Pretendard','Apple SD Gothic Neo','Noto Sans KR',-apple-system,BlinkMacSystemFont,sans-serif;
+  background:var(--bg);
+  background-image:radial-gradient(1200px 480px at 50% -120px, #dfe3fb 0%, rgba(238,241,248,0) 70%);
+  color:var(--ink); min-height:100vh; -webkit-font-smoothing:antialiased; letter-spacing:-.01em;
+}
+
+/* ---------- header ---------- */
+.top{
+  position:relative; overflow:hidden; text-align:center; color:#fff;
+  padding:2.1rem 1.25rem 1.7rem;
+  background:linear-gradient(135deg,#5b5bf0 0%,#7c4ff0 52%,#9b5cf0 100%);
+}
+.top::after{ /* soft sheen */
+  content:""; position:absolute; inset:0;
+  background:radial-gradient(420px 180px at 80% -40px, rgba(255,255,255,.22), transparent 70%);
+  pointer-events:none;
+}
+.top .academy{font-size:11px;font-weight:700;opacity:.82;letter-spacing:.22em;text-transform:uppercase}
+.top h1{font-size:26px;font-weight:800;margin-top:7px;letter-spacing:-.02em}
+.top .sub{font-size:13px;opacity:.86;margin-top:7px;font-weight:500}
+.wrap{max-width:840px;margin:0 auto;padding:1.4rem 1rem 5rem;width:100%}
+
+/* ---------- cards ---------- */
+.card{
+  background:var(--surface); border:1px solid var(--line); border-radius:18px;
+  padding:18px 20px; margin-bottom:14px; box-shadow:var(--shadow);
+}
+.label{font-size:11px;font-weight:800;color:var(--soft);letter-spacing:.1em;text-transform:uppercase;margin-bottom:11px}
+
+/* ---------- inputs ---------- */
+input[type=text]{
+  width:100%;font-family:inherit;font-size:15.5px;border:1.5px solid var(--line);
+  border-radius:13px;padding:13px 15px;color:var(--ink);background:#fbfbfe;transition:all .16s
+}
+input[type=text]:focus{outline:none;border-color:var(--brand);background:#fff;box-shadow:0 0 0 4px var(--brand-l)}
+input[type=text]::placeholder{color:#a6abc0}
+select{transition:all .16s}
+select:focus{outline:none;border-color:var(--brand)!important;box-shadow:0 0 0 4px var(--brand-l)}
+
+/* ---------- buttons ---------- */
+.btn{border:none;border-radius:13px;padding:13px 20px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;transition:transform .08s ease, box-shadow .16s, background .16s, border-color .16s}
+.btn:active{transform:translateY(1px)}
+.btn-main{background:linear-gradient(135deg,var(--brand),var(--violet));color:#fff;box-shadow:0 8px 20px -8px rgba(91,91,240,.6)}
+.btn-main:hover{box-shadow:0 10px 26px -8px rgba(91,91,240,.7)}
+.btn-main:disabled{background:#c7cadb;color:#fff;cursor:not-allowed;box-shadow:none}
+.btn-ghost{background:#fff;border:1.5px solid var(--line);color:var(--ink-2)}
+.btn-ghost:hover{border-color:#c8ccdd;background:#fafbff}
+.btn-line{background:var(--brand-l);border:1.5px solid transparent;color:var(--brand-d)}
+.btn-line:hover{background:#e1e1fd}
+.btn-wide{width:100%;margin-top:12px}
+
+/* ---------- dropzone ---------- */
+.drop{border:2px dashed #cdd2e6;border-radius:16px;padding:30px 18px;text-align:center;cursor:pointer;transition:all .16s;background:#fafbff}
+.drop:hover{border-color:var(--brand);background:var(--brand-l)}
+.drop .ic{font-size:32px;margin-bottom:9px}
+.drop .t{font-size:15px;font-weight:700}
+.drop .s{font-size:12.5px;color:var(--soft);margin-top:5px;line-height:1.5}
+
+/* ---------- answer-key editor ---------- */
+.akhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px;flex-wrap:wrap}
+.akhead .t{font-size:15.5px;font-weight:800}
+.aktable{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:9px}
+.akcell{border:1.5px solid var(--line);border-radius:13px;padding:9px 11px;display:flex;align-items:center;gap:9px;background:#fbfbfe}
+.akcell .n{font-size:13px;font-weight:800;color:var(--brand-d);min-width:26px}
+.akcell input{flex:1;border:none;font-size:14px;font-family:inherit;color:var(--ink);min-width:0;outline:none;background:transparent}
+.akcell.sa{border-color:#fce4b8;background:#fffdf6}
+.akcell .ty{font-size:10px;font-weight:800;color:var(--amber-d);background:var(--amber-l);border-radius:6px;padding:2px 6px}
+.akcell .ty.mc{color:var(--brand-d);background:var(--brand-l)}
+
+.help{font-size:13px;color:var(--ink-2);background:linear-gradient(135deg,#f1f1fe,#fafaff);border:1px solid #e3e3fb;border-radius:14px;padding:13px 16px;margin-bottom:14px;line-height:1.65}
+
+/* ---------- exam list (student) ---------- */
+.examlist{display:flex;flex-direction:column;gap:11px}
+.exam-item{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px;cursor:pointer;transition:all .16s;box-shadow:var(--shadow)}
+.exam-item:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);border-color:#d6d8ec}
+.exam-dot{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,var(--brand),var(--violet));flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;font-weight:800;box-shadow:0 6px 14px -6px rgba(91,91,240,.7)}
+.exam-info{flex:1;min-width:0}
+.exam-title{font-size:16px;font-weight:700;margin-bottom:3px;letter-spacing:-.01em}
+.exam-meta{font-size:12.5px;color:var(--soft)}
+.exam-go{font-size:22px;color:#cfd3e6;transition:transform .16s}
+.exam-item:hover .exam-go{color:var(--brand);transform:translateX(3px)}
+
+/* ---------- answer entry ---------- */
+.ansgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:12px}
+/* ---------- results grid (성적표) ---------- */
+.rgrid{width:max-content}
+.rgrid th,.rgrid td{box-sizing:border-box;overflow:hidden}
+.rgrid thead th{height:34px;vertical-align:middle;background:#fff;border-bottom:2px solid #eef0ef}
+.rgrid td{vertical-align:middle}
+.rgrid-name{position:sticky;background:#fff;z-index:2;box-shadow:1px 0 0 #eef0ef}
+.rgrid thead .rgrid-name{z-index:3}
+.qrow{border:1px solid var(--line);border-radius:16px;padding:13px 13px;position:relative;background:var(--surface);box-shadow:var(--shadow);transition:border-color .2s,background .2s}
+.qrow.is-correct{border-color:#bef0db;background:linear-gradient(180deg,#f4fdf9,#fff)}
+.qrow.is-wrong{border-color:#fcccd8;background:linear-gradient(180deg,#fff5f7,#fff)}
+.qrow .qnum{font-size:12.5px;font-weight:800;color:var(--soft);margin-bottom:9px;display:flex;align-items:center;gap:6px}
+.qimg{width:100%;border:1px solid var(--line);border-radius:11px;margin-bottom:11px;display:block}
+.opts{display:flex;gap:6px;flex-wrap:wrap}
+.opt{width:34px;height:34px;border-radius:10px;border:1.5px solid #d7daea;background:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--ink-2);display:flex;align-items:center;justify-content:center;padding:0;transition:all .12s}
+.opt:hover{border-color:var(--brand);color:var(--brand-d)}
+.opt.sel{border-color:transparent;background:linear-gradient(135deg,var(--brand),var(--violet));color:#fff;box-shadow:0 5px 12px -5px rgba(91,91,240,.7)}
+.opt.multi.sel{background:linear-gradient(135deg,var(--brand-d),var(--violet))}
+.opt:disabled{cursor:default}
+.sa-in{width:100%;border:1.5px solid #d7daea;border-radius:10px;padding:9px 11px;font-size:14px;font-family:inherit;background:#fbfbfe}
+.sa-in:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-l)}
+.qrow .mark{position:absolute;top:7px;right:9px;width:38px;height:38px;pointer-events:none}
+.qrow .mark svg{width:100%;height:100%;overflow:visible}
+.qrow .pen{fill:none;stroke:var(--bad);stroke-width:5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:300;stroke-dashoffset:300;animation:draw .5s ease-out forwards}
+.qrow.is-correct .pen{stroke:var(--ok)}
+@keyframes draw{to{stroke-dashoffset:0}}
+.multi-tag{font-size:10px;color:var(--amber-d);background:var(--amber-l);border-radius:6px;padding:2px 6px;font-weight:800}
+.qfeed{margin-top:11px;border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.55}
+.qfeed.ok{background:var(--ok-l);border:1px solid #b8f0da}
+.qfeed.bad{background:var(--bad-l);border:1px solid #fcccd8}
+.qfeed-line b{font-weight:800}
+.qfeed.ok .qfeed-line b{color:var(--ok-d)}
+.qfeed.bad .qfeed-line b{color:var(--bad-d)}
+.qexpl{margin-top:8px;padding-top:8px;border-top:1px dashed rgba(22,24,42,.14);font-size:12.5px;color:var(--ink-2);line-height:1.65}
+.qexpl b{color:var(--ink)}
+
+/* ---------- score banner ---------- */
+.banner{position:relative;overflow:hidden;background:linear-gradient(135deg,#5b5bf0,#8b5cf6);color:#fff;border-radius:20px;padding:24px 20px;text-align:center;margin-bottom:16px;box-shadow:var(--shadow-lg)}
+.banner::after{content:"";position:absolute;inset:0;background:radial-gradient(360px 140px at 78% -30px,rgba(255,255,255,.22),transparent 70%);pointer-events:none}
+.banner > div{position:relative}
+.banner .who{font-size:12.5px;opacity:.92;font-weight:600;letter-spacing:.01em}
+.banner .pts{font-size:46px;font-weight:800;line-height:1.05;margin-top:2px;letter-spacing:-.02em}
+.banner .pts small{font-size:17px;opacity:.8;font-weight:600}
+.banner .line{font-size:13.5px;opacity:.9;margin-top:6px}
+.banner .save{font-size:12px;margin-top:9px;font-weight:600;opacity:.85}
+
+/* ---------- explanation viewer ---------- */
+.explbox{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:14px;box-shadow:var(--shadow)}
+.explbox .eh{font-size:14px;font-weight:800;margin-bottom:10px;display:flex;align-items:center;gap:7px}
+.explpages{display:flex;flex-direction:column;gap:10px;align-items:center}
+.explpages img{width:100%;max-width:760px;border:1px solid var(--line);border-radius:10px}
+.expl-note{font-size:12.5px;color:var(--soft);margin-top:8px;text-align:center}
+
+/* ---------- sticky action dock ---------- */
+.dock{position:sticky;bottom:0;display:flex;gap:10px;padding:14px 0 16px;margin:18px 0 0;background:linear-gradient(180deg,rgba(238,241,248,0),var(--bg) 30%)}
+.dock .btn{flex:1;border-radius:14px;box-shadow:var(--shadow)}
+
+/* ---------- states / spinner ---------- */
+.state{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:40px 22px;text-align:center;color:var(--soft);box-shadow:var(--shadow);line-height:1.6}
+.state .big{font-size:34px;margin-bottom:10px}
+.spin{width:30px;height:30px;border:3px solid var(--brand-l);border-top-color:var(--brand);border-radius:50%;animation:sp .7s linear infinite;margin:0 auto 14px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.prog{font-size:13px;color:var(--soft);margin-top:8px}
+
+@media (prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important}}
+.passage-diff{font-size:16px;line-height:2;word-spacing:1px}
+.navtabs{display:flex;gap:7px;margin-bottom:14px;flex-wrap:wrap}
+.backbtn{margin-bottom:12px;padding:9px 16px;font-size:14px}
+.resume-note{background:var(--amber-l);border:1px solid #fde2a8;color:var(--amber-d);border-radius:11px;padding:9px 13px;font-size:12.5px;font-weight:600;margin-bottom:12px}
+.navtab{flex:1;min-width:fit-content;text-align:center;text-decoration:none;font-size:13.5px;font-weight:700;padding:10px 12px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink-2);box-shadow:var(--shadow);white-space:nowrap;transition:all .14s}
+.navtab:hover{border-color:#c8ccdd}
+.navtab.on{background:linear-gradient(135deg,var(--brand),var(--violet));color:#fff;border-color:transparent;box-shadow:0 6px 16px -7px rgba(91,91,240,.7)}
+.navtab.logout{flex:0 0 auto;color:var(--soft);font-weight:600;cursor:pointer}
+.navtab.logout:hover{border-color:#fecaca;color:var(--bad)}
+.passage-diff .w-ok{color:var(--ink-2)}
+.passage-diff .w-bad{color:var(--bad-d);font-weight:800;background:var(--bad-l);border-radius:5px;padding:1px 4px;text-decoration:line-through;text-decoration-color:var(--bad)}
+.passage-diff .w-plain{color:var(--ink-2)}
+.passage-diff .w-mine{color:var(--soft);font-size:13px;font-style:italic;margin-left:2px}
+.modepick{display:flex;gap:7px;flex-wrap:wrap}
+.modebtn{flex:1;min-width:72px;padding:11px 10px;border-radius:12px;border:1.5px solid var(--line);background:#fff;font-family:inherit;font-size:14px;font-weight:700;color:var(--ink-2);cursor:pointer;transition:all .12s}
+.modebtn:hover{border-color:var(--brand)}
+.modebtn.on{background:linear-gradient(135deg,var(--brand),var(--violet));color:#fff;border-color:transparent;box-shadow:0 5px 13px -6px rgba(91,91,240,.7)}
+.passage-fill{font-size:16px;line-height:2.4;word-spacing:1px;margin-bottom:6px}
+.passage-fill .w-plain{color:var(--ink-2)}
+.blank-in{display:inline-block;width:96px;border:none;border-bottom:2px solid var(--brand);background:var(--brand-l);border-radius:6px 6px 0 0;padding:2px 6px;font-size:15px;font-family:inherit;color:var(--brand-d);text-align:center}
+.blank-in:focus{outline:none;background:#e6e6ff}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="academy">TERRY'S ENGLISH</div>
+  <h1 id="topTitle">테리스 실전평가</h1>
+  <div class="sub" id="topSub">종이 시험지로 풀고, 답만 입력하면 자동채점</div>
+</div>
+<div class="wrap" id="app"></div>
+
+<script>
+const FB="https://terrys-d643a-default-rtdb.firebaseio.com";
+const ADMIN_PW="terry2025";
+const CIRC=["①","②","③","④","⑤","⑥","⑦","⑧","⑨","⑩"];
+if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+function esc(t){return (t==null?"":String(t)).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));}
+function $(id){return document.getElementById(id);}
+
+/* ===================== 라우팅 ===================== */
+// ?mode=admin → 선생님(업로드/등록)  ?mode=results → 현황판  기본 → 학생
+function currentMode(){ return new URLSearchParams(location.search).get('mode')||'student'; }
+function navTabs(active){
+  const tabs=[["admin","📝 객관식 등록"],["passage","✍️ 본문 채점"],["results","📊 시험 관리·결과"]];
+  return `<div class="navtabs">`+tabs.map(([m,label])=>
+    `<a class="navtab ${active===m?'on':''}" href="?mode=${m}">${label}</a>`).join("")+
+    `<button class="navtab logout" onclick="adminLogout()" title="관리자 모드 끄기">🔒 나가기</button></div>`;
+}
+function start(){
+  const m=currentMode();
+  if(m==='admin') renderAdminGate();
+  else if(m==='passage') renderPassageGate();
+  else if(m==='results') renderResults();
+  else renderStudentStart();
+}
+
+/* ===================== 공통: Firebase ===================== */
+function slugify(name){
+  return "g_"+name.toLowerCase().replace(/[^a-z0-9가-힣]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40);
+}
+async function fetchExam(slug){
+  try{ return await (await fetch(FB+"/grader_exams/"+encodeURIComponent(slug)+".json")).json(); }
+  catch(e){ return null; }
+}
+async function listExamsRaw(){
+  try{ return await (await fetch(FB+"/grader_exams.json")).json(); }catch(e){ return null; }
+}
+// 시험 정렬: 수동 지정 순서(order)가 있으면 그 순서, 없으면 최신 저장순.
+// order는 작을수록 위. order 없는 항목은 뒤로 보내고 savedAt 최신순.
+function examSort(a,b){
+  const ao=(typeof a.order==="number")?a.order:null;
+  const bo=(typeof b.order==="number")?b.order:null;
+  if(ao!=null && bo!=null) return ao-bo;
+  if(ao!=null) return -1;
+  if(bo!=null) return 1;
+  return (b.savedAt||"").localeCompare(a.savedAt||"");
+}
+</script>
+<script>
+/* ===================== 선생님(관리자) ===================== */
+let A_ANSWERS=[];      // [{n, type:'mc'|'sa', a:[idx]/'' , aText}]
+let A_PAGES=[];        // 해설 PDF 페이지 이미지 (dataURL)
+let A_QIMGS={};        // { 문항번호: dataURL } — 문제지 이미지
+let A_PDF="";          // 원본 정답·해설 PDF (dataURL)
+let A_TITLE="";
+let A_ANSWER_TABLE_IMG="";  // 정답표(grid형) 캡처 이미지 — 선생님 확인용
+
+function isAdmin(){ try{ return localStorage.getItem("terrys_admin")==="1"; }catch(e){ return false; } }
+function setAdmin(on){ try{ on?localStorage.setItem("terrys_admin","1"):localStorage.removeItem("terrys_admin"); }catch(e){} }
+function adminLogout(){
+  if(!confirm("관리자 모드를 끌까요? 다음에 시험을 등록·관리하려면 비밀번호를 다시 입력해야 합니다.")) return;
+  setAdmin(false);
+  location.href=location.pathname; // 학생 화면으로
+}
+function renderAdminGate(){
+  if(isAdmin()){ renderAdminUpload(); return; }
+  $("topTitle").textContent="선생님 — 시험 등록";
+  $("topSub").textContent="PDF 한 개로 정답·해설·문제 이미지까지 자동 처리";
+  $("app").innerHTML=`
+    <div class="card">
+      <div class="label">관리자 확인</div>
+      <input type="text" id="pw" placeholder="관리자 비밀번호" autocomplete="off">
+      <button class="btn btn-main btn-wide" onclick="adminLogin()">들어가기</button>
+    </div>`;
+  $("pw").addEventListener("keydown",e=>{if(e.key==="Enter")adminLogin();});
+}
+function adminLogin(){
+  if($("pw").value!==ADMIN_PW){ alert("비밀번호가 틀렸습니다."); return; }
+  setAdmin(true);
+  renderAdminUpload();
+}
+
+function renderAdminUpload(){
+  $("topTitle").textContent="선생님 — 시험 등록";
+  $("app").innerHTML=navTabs("admin")+`
+    <div class="card">
+      <div class="label">1. 시험 제목</div>
+      <input type="text" id="examTitle" placeholder="예: 중3 기말 3·4과 기출변형" autocomplete="off">
+    </div>
+    <div class="card">
+      <div class="label">2. PDF 업로드 (정답·해설 + 문제)</div>
+      <div class="drop" id="drop" onclick="$('file').click()">
+        <div class="ic">📄</div>
+        <div class="t">PDF를 여기에</div>
+        <div class="s">정답·해설이 든 PDF를 올리세요. 문제·해설이 한 파일이면 문제 이미지도 자동으로 만들어집니다.</div>
+      </div>
+      <input type="file" id="file" accept="application/pdf" style="display:none">
+    </div>
+    <div class="card">
+      <div class="label">3. 문제지가 따로 있을 때만 (선택)</div>
+      <div class="drop" id="qdrop" onclick="$('qfile').click()" style="border-color:#d6c7e0;background:#fbfafd">
+        <div class="ic">📝</div>
+        <div class="t" id="qdropT">문제지 PDF가 별도 파일일 때만 올리세요</div>
+        <div class="s">2번에 문제+해설 합본을 올렸다면 여기는 비워두세요</div>
+      </div>
+      <input type="file" id="qfile" accept="application/pdf" style="display:none">
+    </div>
+    <div id="processBox"></div>`;
+  const f=$("file"), drop=$("drop");
+  f.addEventListener("change",e=>{ if(e.target.files[0]) handlePDF(e.target.files[0]); });
+  ["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.style.borderColor="#1a7350";}));
+  ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.style.borderColor="";}));
+  drop.addEventListener("drop",e=>{ const file=e.dataTransfer.files[0]; if(file&&file.type==="application/pdf") handlePDF(file); });
+  // 문제지 업로드
+  const qf=$("qfile"), qdrop=$("qdrop");
+  qf.addEventListener("change",e=>{ if(e.target.files[0]) handleQuestionPDF(e.target.files[0]); });
+  ["dragover","dragenter"].forEach(ev=>qdrop.addEventListener(ev,e=>{e.preventDefault();qdrop.style.borderColor="#9333ea";}));
+  ["dragleave","drop"].forEach(ev=>qdrop.addEventListener(ev,e=>{e.preventDefault();qdrop.style.borderColor="";}));
+  qdrop.addEventListener("drop",e=>{ const file=e.dataTransfer.files[0]; if(file&&file.type==="application/pdf") handleQuestionPDF(file); });
+}
+
+async function handlePDF(file){
+  A_TITLE=($("examTitle").value||"").trim()||file.name.replace(/\.pdf$/i,"");
+  $("examTitle").value=A_TITLE;
+  $("processBox").innerHTML=`<div class="state"><div class="spin"></div><div>PDF 분석 중…</div><div class="prog" id="prog">파일 읽는 중</div></div>`;
+  const buf=await file.arrayBuffer();
+  try{ A_PDF=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file);}); }catch(e){ A_PDF=""; }
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  $("prog").textContent="정답·해설 추출 중…";
+  let fullText="";
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p);
+    const tc=await page.getTextContent();
+    fullText += tc.items.map(it=>it.str).join("") + "\n";
+  }
+  let answers=parseAnswers(fullText);
+
+  // 정답을 거의 못 읽었으면(블록형 아님) → 정답표(grid)형 PDF로 보고 표 OCR 시도
+  const gotKeys = answers.filter(q=>q.type==="mc"?q.a.length:q.aText).length;
+  if(answers.length===0 || gotKeys < answers.length*0.3){
+    try{
+      $("prog").textContent="정답표 인식 중…";
+      const tableAns=await parseAnswerTable(pdf,(d,t)=>{ const pr=$("prog"); if(pr) pr.textContent=`정답표 인식 중… (${d}/${t})`; });
+      if(tableAns && tableAns.answers.length){
+        // 표에서 얻은 정답과 (블록형으로 얻은) 해설을 합친다
+        const explByN={}; answers.forEach(q=>{ if(q.expl) explByN[q.n]=q.expl; });
+        // 블록형 해설을 못 얻었으면 'N.' 해설 텍스트에서 추출 시도
+        if(Object.keys(explByN).length===0){
+          const ex2=parseDotExplanations(fullText);
+          Object.assign(explByN, ex2);
+        }
+        tableAns.answers.forEach(q=>{ if(explByN[q.n]) q.expl=explByN[q.n]; });
+        answers=tableAns.answers;
+        A_ANSWER_TABLE_IMG = tableAns.tableImg || "";
+      }
+    }catch(e){ /* 표 인식 실패 → 아래 분기로 */ }
+  }
+
+  if(!answers.length){
+    $("processBox").innerHTML=`<div class="state"><div class="big">⚠</div>
+      <div>정답을 자동으로 찾지 못했습니다.<br>아래에서 문항 수를 정하고 직접 입력해 주세요.</div></div>
+      <div class="card"><div class="label">문항 수</div>
+      <input type="text" id="manualN" placeholder="예: 28"><button class="btn btn-main btn-wide" onclick="manualAnswers()">빈 표 만들기</button></div>`;
+    return;
+  }
+  A_ANSWERS=answers;
+  A_PAGES=[];
+  // 블록형 PDF에서 정답 동그라미가 작은 '이미지'로 박혀 텍스트로 안 읽힌 경우
+  // (예: 옛 족보 N) [중] ④) → 해설 페이지의 작은 동그라미를 OCR로 읽어 채운다.
+  const needImg=A_ANSWERS.filter(q=>q._needAns).length;
+  if(needImg && !A_ANSWER_TABLE_IMG){
+    try{
+      $("prog").textContent=`정답 기호 자동 인식 중… (0/${needImg})`;
+      await recoverAnswersByImage(pdf,(d,t)=>{ const pr=$("prog"); if(pr) pr.textContent=`정답 기호 자동 인식 중… (${d}/${t})`; });
+    }catch(e){}
+  }
+  $("prog").textContent="문제 이미지 만드는 중…";
+  try{ await cropQuestionsFromPdf(pdf, (i,n)=>{ const pr=$("prog"); if(pr) pr.textContent=`문제 이미지 만드는 중… (${i}/${n})`; }); }catch(e){ /* 이미지 실패해도 채점은 가능 */ }
+  renderAnswerEditor();
+}
+
+// 블록형 PDF의 작은 동그라미 이미지 → 문항번호 옆 첫 동그라미만 OCR
+async function recoverAnswersByImage(pdf, onProg){
+  if(!window.Tesseract) return;
+  const needNums=new Set(A_ANSWERS.filter(q=>q._needAns).map(q=>q.n));
+  if(!needNums.size) return;
+  const OPS=pdfjsLib.OPS;
+  const mul=(a,b)=>[a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],a[0]*b[4]+a[2]*b[5]+a[4],a[1]*b[4]+a[3]*b[5]+a[5]];
+  const groupCanvas={}; const collected={};
+  let done=0;
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p);
+    const vp=page.getViewport({scale:1});
+    const tc=await page.getTextContent();
+    // 문항 시작 'N)' 위치 (블록 시작)
+    const qmarks=[];
+    tc.items.forEach(it=>{
+      const m=(it.str||"").match(/^\s*(\d{1,3})\)/);
+      if(m){ const x=it.transform[4], y=vp.height-it.transform[5]; qmarks.push({n:parseInt(m[1],10),x,y}); }
+    });
+    if(!qmarks.length) continue;
+    // 작은 이미지 좌표 수집
+    const ops=await page.getOperatorList();
+    let ctm=[1,0,0,1,0,0]; const stack=[]; const spots=[];
+    for(let i=0;i<ops.fnArray.length;i++){
+      const fn=ops.fnArray[i], args=ops.argsArray[i];
+      if(fn===OPS.save) stack.push(ctm.slice());
+      else if(fn===OPS.restore) ctm=stack.pop()||[1,0,0,1,0,0];
+      else if(fn===OPS.transform) ctm=mul(ctm,args);
+      else if(fn===OPS.paintImageXObject||fn===OPS.paintInlineImageXObject||fn===OPS.paintImageMaskXObject){
+        const w=Math.hypot(ctm[0],ctm[1]), h=Math.hypot(ctm[2],ctm[3]);
+        spots.push({w,h,x:ctm[4],y:vp.height-ctm[5]-h});
+      }
+    }
+    const small=spots.filter(s=>s.w>=5&&s.w<=18&&s.h>=5&&s.h<=18);
+    if(!small.length) continue;
+    const SC=6;
+    const big=document.createElement("canvas");
+    big.width=Math.ceil(vp.width*SC); big.height=Math.ceil(vp.height*SC);
+    await page.render({canvasContext:big.getContext("2d"), viewport:page.getViewport({scale:SC})}).promise;
+    // 각 문항번호에 대해: 같은 줄(y±9), 번호 오른쪽, 가장 가까운 동그라미 1개만
+    for(const q of qmarks){
+      if(!needNums.has(q.n)) continue;
+      let best=null,bd=1e9;
+      for(const s of small){
+        const sy=s.y+s.h/2, sx=s.x;
+        if(Math.abs(sy-q.y)<9 && sx>q.x && sx-q.x<120){
+          const d=sx-q.x; if(d<bd){bd=d;best=s;}
+        }
+      }
+      if(!best) continue;
+      const pad=Math.max(2,best.w*0.15);
+      const c=document.createElement("canvas");
+      c.width=Math.round((best.w+pad*2)*SC*2); c.height=Math.round((best.h+pad*2)*SC*2);
+      c.getContext("2d").drawImage(big,(best.x-pad)*SC,(best.y-pad)*SC,(best.w+pad*2)*SC,(best.h+pad*2)*SC,0,0,c.width,c.height);
+      const r=await ocrCircleDigit(c);
+      if(r.digit && r.conf>=0.5){ collected[q.n]={d:r.digit,conf:r.conf}; }
+      done++; if(onProg) onProg(done, needNums.size);
+    }
+  }
+  // 채움
+  for(const q of A_ANSWERS){
+    if(!q._needAns) continue;
+    const g=collected[q.n];
+    if(g){ q.a=[g.d-1]; q.type="mc"; q._lowConf=g.conf<0.75; delete q._needAns; }
+  }
+}
+
+// 해설이 'N. <원문자>' 형식일 때 해설 텍스트만 뽑아 문항번호→해설 매핑
+function parseDotExplanations(text){
+  const out={};
+  // "12.\n해설\n<본문>" 또는 "12. ... 해설 ..." 형태. 해설 키워드 뒤 문장을 다음 'N.' 전까지
+  const re=/(\d{1,2})\s*\.\s*(?:해설)?\s*([\s\S]*?)(?=\d{1,2}\s*\.\s*해설|\d{1,2}\s*\.\s|$)/g;
+  // 위 정규식은 과하게 잡힐 수 있어 보수적으로: '해설' 단어가 들어간 블록만 사용
+  const blocks=text.split(/(?=\b\d{1,2}\s*\.\s*해설)/);
+  blocks.forEach(b=>{
+    const m=b.match(/^(\d{1,2})\s*\.\s*해설\s*([\s\S]*)/);
+    if(m){
+      const n=parseInt(m[1],10);
+      let body=(m[2]||"").replace(/\s+/g," ").trim();
+      // 다음 문항/꼬리말 제거
+      body=body.split(/AOBC학원|콘텐츠산업|I410-/)[0].trim();
+      if(body && body.length>4) out[n]=body.slice(0,600);
+    }
+  });
+  return out;
+}
+
+// ===== 정답표(grid형) PDF 처리 =====
+// 족보 신형: 마지막 '정답 및 해설' 페이지 상단에 1~N 정답이 표로 모여 있고,
+// 정답 동그라미(①②③④⑤)가 벡터 그림이라 텍스트로 안 읽힌다.
+// 표의 '번호' 텍스트 위치를 찾아, 그 오른쪽 칸을 잘라 OCR로 정답을 읽는다.
+// OCR은 100% 신뢰가 어려우므로 다수결+신뢰도를 매기고, 낮으면 _needAns로 표시.
+async function parseAnswerTable(pdf, onProg){
+  if(!window.Tesseract) return null;
+  // 1) 정답표가 있는 페이지 찾기: '정답 및 해설' 또는 '주관식' 텍스트 + 1~30 숫자 격자
+  let tablePage=-1, numCells=null, pageObj=null, vpRef=null;
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p);
+    const tc=await page.getTextContent();
+    const vp=page.getViewport({scale:1});
+    const txt=tc.items.map(it=>it.str).join(" ");
+    if(!/정답\s*및\s*해설|주관식/.test(txt)) continue;
+    // 숫자 셀 위치 수집 (1~40 정수, 페이지 상단 영역)
+    const nums=[];
+    tc.items.forEach(it=>{
+      const s=(it.str||"").trim();
+      if(/^\d{1,2}$/.test(s)){
+        const n=parseInt(s,10);
+        if(n>=1&&n<=40){
+          const x=it.transform[4], y=vp.height-it.transform[5];
+          nums.push({n,x,y,w:it.width||6});
+        }
+      }
+    });
+    // 격자처럼 보이려면 같은 y에 여러 숫자가 줄지어 있어야 함
+    if(nums.length>=10){
+      // 헤더/꼬리말의 외톨이 숫자 제거: 열(x) 클러스터가 3개 이상 반복되는 영역만 채택
+      const colHist={};
+      nums.forEach(c=>{ const k=Math.round(c.x/8)*8; colHist[k]=(colHist[k]||0)+1; });
+      const mainCols=Object.keys(colHist).filter(k=>colHist[k]>=3).map(Number);
+      if(mainCols.length>=3){
+        const near=(x)=> mainCols.some(c=>Math.abs(c-x)<=14);
+        const grid=nums.filter(c=>near(c.x));
+        // 행(y) 클러스터가 연속적인 구간만 (헤더 y=27, 꼬리 y=800+ 제거)
+        const ysAll=[...new Set(grid.map(c=>Math.round(c.y)))].sort((a,b)=>a-b);
+        // 가장 촘촘한 연속 행 구간 찾기
+        let bandRows=[], cur=[ysAll[0]];
+        for(let k=1;k<ysAll.length;k++){
+          if(ysAll[k]-ysAll[k-1]<=26) cur.push(ysAll[k]);
+          else { if(cur.length>bandRows.length) bandRows=cur; cur=[ysAll[k]]; }
+        }
+        if(cur.length>bandRows.length) bandRows=cur;
+        const yMinB=Math.min(...bandRows)-6, yMaxB=Math.max(...bandRows)+6;
+        const gridF=grid.filter(c=>c.y>=yMinB&&c.y<=yMaxB);
+        if(gridF.length>=10){
+          tablePage=p; numCells=gridF; pageObj=page; vpRef=vp; break;
+        }
+      }
+    }
+  }
+  if(tablePage<0) return null;
+
+  // 2) 번호 셀 정리: 같은 번호 첫 등장만, y/x 정렬
+  const seen=new Map();
+  numCells.sort((a,b)=> (Math.round(a.y)-Math.round(b.y))|| (a.x-b.x));
+  numCells.forEach(c=>{ if(!seen.has(c.n)) seen.set(c.n,c); });
+  const maxN=Math.max(...seen.keys());
+  // 표는 보통 5열. 행 간격/열 간격 추정
+  const ys=[...new Set([...seen.values()].map(c=>Math.round(c.y)))].sort((a,b)=>a-b);
+  const rowGap = ys.length>1 ? (ys[ys.length-1]-ys[0])/(ys.length-1) : 16;
+
+  // 3) 표 영역을 고해상도로 렌더 (선생님 확인용 이미지로도 사용)
+  const allX=[...seen.values()].map(c=>c.x), allY=[...seen.values()].map(c=>c.y);
+  const minX=Math.min(...allX)-6, maxX=Math.max(...allX)+70;
+  const minY=Math.min(...allY)-12, maxY=Math.max(...allY)+rowGap*0.7+12;
+  const SC=3;
+  const tvp=pageObj.getViewport({scale:SC});
+  const tcanvas=document.createElement("canvas");
+  tcanvas.width=Math.ceil(vpRef.width*SC); tcanvas.height=Math.ceil(vpRef.height*SC);
+  await pageObj.render({canvasContext:tcanvas.getContext("2d"), viewport:tvp}).promise;
+  // 확인용 표 이미지 crop
+  const timg=document.createElement("canvas");
+  timg.width=Math.round((maxX-minX)*SC); timg.height=Math.round((maxY-minY)*SC);
+  timg.getContext("2d").drawImage(tcanvas, minX*SC, minY*SC, (maxX-minX)*SC, (maxY-minY)*SC, 0,0, timg.width, timg.height);
+  const tableImg=timg.toDataURL("image/png");
+
+  // 4) 각 번호 오른쪽 칸을 잘라 OCR (다수결+신뢰도)
+  const OSC=8; // OCR용 추가 배율 (표 렌더 위에서 다시 키움)
+  const results={}; const conf={};
+  const keys=[...seen.keys()].sort((a,b)=>a-b);
+  let done=0;
+  for(const n of keys){
+    const c=seen.get(n);
+    // 정답 동그라미: 번호 오른쪽 약 +14~+44pt, 세로 중앙
+    const cx=c.x + (c.w||6) + 22;
+    const cy=c.y;
+    const r=9;
+    // 표 렌더 캔버스에서 해당 영역 추출
+    const sx=(cx-r)*SC, sy=(cy-r)*SC, sw=2*r*SC, sh=2*r*SC;
+    const cell=document.createElement("canvas"); cell.width=Math.round(sw*2); cell.height=Math.round(sh*2);
+    cell.getContext("2d").drawImage(tcanvas, sx, sy, sw, sh, 0,0, cell.width, cell.height);
+    const d=await ocrCircleDigit(cell);
+    results[n]=d.digit; conf[n]=d.conf;
+    done++; if(onProg) onProg(done, keys.length);
+  }
+
+  // 5) answer 객체로 변환. 주관식 칸(숫자 대신 '주관식')은 sa로.
+  //    표 텍스트에서 '주관식' 위치를 알아내기 어려우므로, OCR 실패+빈칸을 주관식 후보로 둠
+  const answers=[];
+  for(let n=1;n<=maxN;n++){
+    if(!seen.has(n)) continue;
+    const d=results[n], cf=conf[n]||0;
+    if(d && cf>=0.55){
+      answers.push({n,type:"mc",a:[d-1],aText:"",expl:"", _lowConf: cf<0.75});
+    }else{
+      // 못 읽음 → 정답 미상(객관식 가정). 선생님이 표 보고 채움
+      answers.push({n,type:"mc",a:[],aText:"",expl:"", _needAns:true});
+    }
+  }
+  return {answers, tableImg};
+}
+
+// 동그라미 친 숫자 1장 → {digit, conf} (다수결)
+async function ocrCircleDigit(canvas){
+  if(!window.Tesseract) return {digit:null,conf:0};
+  const votes=[];
+  // 테두리(원) 제거 비율을 바꿔가며 여러 번 인식
+  for(const mfrac of [0.16,0.22,0.28]){
+    const masked=maskBorder(canvas, mfrac);
+    try{
+      const {data}=await Tesseract.recognize(masked,'eng',{
+        tessedit_char_whitelist:'12345',
+        tessedit_pageseg_mode:'10'
+      });
+      const t=(data.text||"").replace(/[^1-5]/g,"");
+      if(t) votes.push(parseInt(t[0],10));
+    }catch(e){}
+  }
+  if(!votes.length) return {digit:null,conf:0};
+  const cnt={}; votes.forEach(v=>cnt[v]=(cnt[v]||0)+1);
+  let best=null,bn=0; for(const k in cnt){ if(cnt[k]>bn){bn=cnt[k];best=+k;} }
+  return {digit:best, conf:bn/votes.length};
+}
+// 캔버스 가장자리(원 테두리)를 흰색으로 지워 안쪽 숫자만 남김
+function maskBorder(canvas, frac){
+  const c=document.createElement("canvas"); c.width=canvas.width; c.height=canvas.height;
+  const ctx=c.getContext("2d");
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,c.width,c.height);
+  const m=Math.round(Math.min(c.width,c.height)*frac);
+  ctx.drawImage(canvas, m,m, c.width-2*m, c.height-2*m, m,m, c.width-2*m, c.height-2*m);
+  // 대비 강화(이진화 비슷)
+  const id=ctx.getImageData(0,0,c.width,c.height); const d=id.data;
+  for(let i=0;i<d.length;i+=4){
+    const lum=d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114;
+    const v=lum<135?0:255; d[i]=d[i+1]=d[i+2]=v;
+  }
+  ctx.putImageData(id,0,0);
+  return c;
+}
+
+// 정답+해설 파싱: 두 형식 지원
+//   (구) "N) [정답] <답> [해설] <해설>"
+//   (신) "N) [난이도] <답> [해설] <해설>"   ← 예: "1) [중상] ④" / "1) [중]"
+// 2단 레이아웃 PDF는 블록 순서가 섞일 수 있으므로 '실제 번호 N'으로 정렬한다.
+// 정답 원문자가 텍스트로 안 읽히면(_needAns) 나중에 이미지 OCR로 채운다.
+function parseAnswers(text){
+  const circ="①②③④⑤⑥⑦⑧⑨⑩";
+  const blockStart=String.raw`(\d{1,3})\s*\)\s*\[(?:정답|[가-힣]{1,3})\]`;
+  const re=new RegExp(
+    blockStart + String.raw`\s*([\s\S]*?)(?:\[해설\]\s*([\s\S]*?))?(?=` + blockStart + String.raw`|$)`,
+    "g"
+  );
+  const items=[]; let m;
+  while((m=re.exec(text))){
+    const num=parseInt(m[1],10);
+    const ansRaw=(m[2]||"").trim().replace(/\s+/g," ");
+    const expl=(m[3]||"").trim().replace(/\s+/g," ");
+    items.push({num,ansRaw,expl});
+  }
+  if(!items.length) return [];
+  // 같은 번호 중복 매칭 시 원문자(정답)가 있는 쪽 우선
+  const byNum=new Map();
+  for(const it of items){
+    const has=[...it.ansRaw].some(c=>circ.includes(c));
+    const prev=byNum.get(it.num);
+    if(!prev){ byNum.set(it.num,it); continue; }
+    const prevHas=[...prev.ansRaw].some(c=>circ.includes(c));
+    if(has && !prevHas) byNum.set(it.num,it);
+  }
+  const sorted=[...byNum.values()].sort((a,b)=>a.num-b.num);
+  const out=sorted.map(it=>{
+    const n=it.num;
+    // 정답: 난이도 표기 직후 맨 앞 연속 원문자만 인정 (해설 본문 원문자는 [해설] 뒤로 분리됨)
+    const headMatch=it.ansRaw.match(/^[\s]*([①②③④⑤⑥⑦⑧⑨⑩][①②③④⑤⑥⑦⑧⑨⑩\s,，·]*)/);
+    const ansHead=headMatch?headMatch[1]:it.ansRaw;
+    const picks=[...ansHead].filter(c=>circ.includes(c));
+    const stripped=ansHead.replace(/[①②③④⑤⑥⑦⑧⑨⑩\s,，·]/g,"");
+    if(picks.length && stripped.length===0){
+      const idx=[...new Set(picks.map(c=>circ.indexOf(c)))].sort((a,b)=>a-b);
+      return {n,type:"mc",a:idx,aText:"",expl:it.expl};
+    }
+    if(ansHead.trim().length===0){
+      return {n,type:"mc",a:[],aText:"",expl:it.expl,_needAns:true};
+    }
+    if(/^[\s,，.·]+$/.test(ansHead)){
+      return {n,type:"mc",a:[],aText:"",expl:it.expl,_needAns:true};
+    }
+    // 옆 컬럼 오염(한글/긴 영문)이면 정답 미상으로 비움
+    if(/[가-힣]/.test(ansHead) || ansHead.trim().length>40){
+      return {n,type:"mc",a:[],aText:"",expl:it.expl,_needAns:true};
+    }
+    return {n,type:"sa",a:[],aText:ansHead.trim(),expl:it.expl};
+  });
+  return out;
+}
+
+// 문제지 PDF(별도 파일) → 문항별 이미지 크롭
+async function handleQuestionPDF(file){
+  const t=$("qdropT"); if(t) t.textContent="문제지 분석 중…";
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  const cnt=await cropQuestionsFromPdf(pdf,(i,n)=>{ if(t) t.textContent=`문제 이미지 만드는 중… (${i}/${n})`; });
+  if(!cnt){ if(t) t.textContent="문항 번호를 못 찾았어요 (이 문제지는 이미지로 못 잘라요)"; return; }
+  if(t) t.textContent=`✅ 문제지 ${cnt}문항 이미지 준비 완료`;
+  if(A_ANSWERS.length) renderAnswerEditor();
+}
+
+// 공통: PDF에서 문항(N.) 위치를 찾아 문항별 이미지를 A_QIMGS 에 채움. 반환=잡은 문항 수
+async function cropQuestionsFromPdf(pdf, onProg){
+  // 1) 문항 시작점 수집: 줄 맨앞 "N." (좌/우 컬럼)
+  const marks=[];
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p);
+    const tc=await page.getTextContent();
+    const vw=page.view; const W=vw[2]-vw[0], H=vw[3]-vw[1]; const mid=W/2;
+    tc.items.forEach(it=>{
+      const s=(it.str||"").trim();
+      const m=s.match(/^(\d+)\.$/);
+      if(m){ const x=it.transform[4]; const yTop=H-it.transform[5]; marks.push({p,col:x<mid?0:1,y:yTop,num:+m[1],x}); }
+    });
+  }
+  marks.sort((a,b)=> a.p-b.p || a.col-b.col || a.y-b.y);
+  const seq=[]; let expect=1;
+  marks.forEach(mk=>{ if(mk.num===expect){ seq.push(mk); expect++; } });
+  if(!seq.length) return 0;
+  A_QIMGS={};
+  for(let i=0;i<seq.length;i++){
+    const mk=seq[i];
+    const page=await pdf.getPage(mk.p);
+    const vw=page.view; const W=vw[2]-vw[0], H=vw[3]-vw[1]; const mid=W/2;
+    // 컬럼 좌우 여백을 넉넉히 (박스 테두리가 잘리지 않게)
+    const xL = mk.col===0 ? 28 : mid+2;
+    const xR = mk.col===0 ? mid-2 : W-18;
+    let yB = H-30;
+    for(let j=i+1;j<seq.length;j++){
+      if(seq[j].p===mk.p && seq[j].col===mk.col && seq[j].y>mk.y+5){ yB=seq[j].y-6; break; }
+    }
+    const yT=Math.max(0,mk.y-10);
+    const scale=1.7;
+    const vp=page.getViewport({scale});
+    const full=document.createElement("canvas"); full.width=vp.width; full.height=vp.height;
+    await page.render({canvasContext:full.getContext("2d"),viewport:vp}).promise;
+    const cv=document.createElement("canvas");
+    cv.width=Math.round((xR-xL)*scale); cv.height=Math.round((yB-yT)*scale);
+    cv.getContext("2d").drawImage(full, xL*scale, yT*scale, (xR-xL)*scale, (yB-yT)*scale, 0,0, cv.width, cv.height);
+    A_QIMGS[mk.num]=cv.toDataURL("image/jpeg",0.75);
+    if(onProg) onProg(i+1,seq.length);
+  }
+  return seq.length;
+}
+function manualAnswers(){
+  const n=parseInt($("manualN").value); if(!n||n<1){alert("문항 수를 숫자로 입력해 주세요.");return;}
+  A_ANSWERS=[]; for(let i=1;i<=n;i++) A_ANSWERS.push({n:i,type:"mc",a:[],aText:"",expl:""});
+  renderAnswerEditor();
+}
+
+function renderAnswerEditor(){
+  const filled=A_ANSWERS.filter(q=>q.type==="mc"?q.a.length:q.aText).length;
+  const explCnt=A_ANSWERS.filter(q=>q.expl).length;
+  const imgCnt=Object.keys(A_QIMGS).length;
+  const needAns=A_ANSWERS.filter(q=>q._needAns).map(q=>q.n);
+  const lowConf=A_ANSWERS.filter(q=>q._lowConf && !q._needAns).map(q=>q.n);
+  let h="";
+  // 정답표(grid형) 캡처가 있으면 맨 위에 띄워 대조하기 쉽게
+  if(A_ANSWER_TABLE_IMG){
+    h+=`<div class="card" style="background:#fff7ed;border-color:#fdba74">
+      <div style="font-size:13.5px;color:#9a3412;font-weight:700;margin-bottom:8px">📋 이 PDF는 정답이 '표'로 되어 있어 자동 인식했어요</div>
+      <div style="font-size:12.5px;color:#9a3412;margin-bottom:10px;line-height:1.6">
+        표 안 정답 동그라미는 그림이라 인식이 100% 정확하진 않아요. 아래 <b>실제 정답표</b>를 보며,
+        ${needAns.length?`못 읽은 <b>${needAns.length}개</b> 칸과 `:''}${lowConf.length?`불확실한 <b>${lowConf.length}개</b>(주황) 칸을 `:''}확인·수정해 주세요.</div>
+      <img src="${A_ANSWER_TABLE_IMG}" style="width:100%;max-width:560px;border:1px solid var(--line);border-radius:8px;display:block">
+    </div>`;
+  }
+  if(needAns.length && !A_ANSWER_TABLE_IMG){
+    h+=`<div class="help" style="background:#fff7ed;border-color:#fdba74;color:#9a3412">
+      ⚠️ 정답 자동 인식이 안 된 문항이 <b>${needAns.length}개</b> 있어요. 아래 주황색 칸에 번호를 입력해 주세요. (${needAns.join(", ")}번)</div>`;
+  }
+  h+=`<div class="help">✅ 정답과 해설을 자동으로 추출했어요. 아래에서 확인하고 틀린 곳은 바로 고치면 됩니다.<br>
+    객관식은 <b>번호(예: 3 또는 복수정답 2,5)</b>, 주관식은 <b>정답 단어</b>. 해설은 학생 채점 후 각 문항 아래에 표시됩니다.${imgCnt?`<br>🖼️ 문제지 이미지 ${imgCnt}개 준비됨 — 채점 결과에 문제가 함께 보입니다.`:``}</div>
+    <div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;${imgCnt?'background:var(--green-l);border-color:var(--green)':'background:#fbfafd;border-color:#d6c7e0'}">
+      <div style="font-size:13.5px;${imgCnt?'color:var(--green-d)':'color:#6b21a8'}">
+        ${imgCnt?`🖼️ 문제 이미지 ${imgCnt}개 준비됨`:`📝 문제지가 따로 있으면 올리세요 — 학생 채점 화면에 문제가 그대로 보입니다`}
+      </div>
+      <button class="btn btn-line" style="padding:8px 14px;font-size:13px;${imgCnt?'border-color:var(--green);color:var(--green-d)':'border-color:#9333ea;color:#6b21a8'}" onclick="$('qfile2').click()">${imgCnt?'문제지 다시 올리기':'📝 문제지 PDF 올리기'}</button>
+      <input type="file" id="qfile2" accept="application/pdf" style="display:none">
+    </div>
+    <div class="card">
+      <div class="akhead"><div class="t">정답·해설표 (${A_ANSWERS.length}문항 · 정답 ${filled} · 해설 ${explCnt})</div>
+        <button class="btn btn-ghost" style="padding:7px 12px;font-size:13px" onclick="addRow()">+ 문항</button>
+      </div>
+      <div id="aktable" style="display:flex;flex-direction:column;gap:10px">`;
+  A_ANSWERS.forEach((q,i)=>{
+    const val=q.type==="mc"?(q.a.map(x=>x+1).join(",")):q.aText;
+    const empty=(q.type==="mc"?q.a.length===0:!q.aText);
+    const hl = empty ? "border:2px solid #fb923c;background:#fff7ed"
+             : (q._lowConf ? "border:2px solid #fbbf24;background:#fffbeb" : "");
+    h+=`<div class="akcell ${q.type==='sa'?'sa':''}" id="ak${i}" style="flex-direction:column;align-items:stretch;gap:7px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="n">${q.n}</span>
+        <input value="${esc(val)}" oninput="onAns(${i},this.value)" placeholder="${q.type==='sa'?'정답 단어':'번호 (예: 3 또는 2,5)'}" style="flex:1;${hl}">
+        <span class="ty ${q.type==='mc'?'mc':''}" onclick="toggleType(${i})" style="cursor:pointer" title="객/주관식 전환">${q.type==='sa'?'주관':'객관'}</span>
+      </div>
+      <textarea oninput="onExpl(${i},this.value)" placeholder="해설 (선택)" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:7px 9px;font-size:13px;font-family:inherit;resize:vertical;min-height:42px;color:#374151">${esc(q.expl||"")}</textarea>
+    </div>`;
+  });
+  h+=`</div></div>
+    <div class="dock">
+      <button class="btn btn-ghost" onclick="renderAdminUpload()">다시 업로드</button>
+      <button class="btn btn-main" onclick="saveExam()">🔥 시험 저장</button>
+    </div>`;
+  $("app").innerHTML=h;
+  const qf2=$("qfile2");
+  if(qf2) qf2.addEventListener("change",async e=>{
+    const file=e.target.files[0]; if(!file) return;
+    const oldH=$("app").innerHTML;
+    $("app").insertAdjacentHTML("afterbegin",`<div class="state" id="qproc"><div class="spin"></div><div id="qprogtxt">문제지 분석 중…</div></div>`);
+    const buf=await file.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    const cnt=await cropQuestionsFromPdf(pdf,(i,n)=>{ const t=$("qprogtxt"); if(t) t.textContent=`문제 이미지 만드는 중… (${i}/${n})`; });
+    if(!cnt) alert("문항 번호(1. 2. …)를 못 찾아 이미지를 만들지 못했어요. 이 PDF는 문제지가 아닐 수 있어요.");
+    renderAnswerEditor();
+  });
+}
+function onExpl(i,v){ A_ANSWERS[i].expl=v; }
+function onAns(i,v){
+  const q=A_ANSWERS[i];
+  if(q.type==="mc"){
+    const a=v.split(/[,\s]+/).map(x=>parseInt(x)).filter(x=>x>=1&&x<=10).map(x=>x-1);
+    q.a=[...new Set(a)];
+  }else{ q.aText=v.trim(); }
+}
+function toggleType(i){
+  const q=A_ANSWERS[i];
+  q.type = q.type==="mc"?"sa":"mc";
+  if(q.type==="sa"){ q.aText=""; } else { q.a=[]; }
+  renderAnswerEditor();
+}
+function addRow(){
+  A_ANSWERS.push({n:A_ANSWERS.length+1,type:"mc",a:[],aText:"",expl:""});
+  renderAnswerEditor();
+}
+
+async function saveExam(){
+  A_TITLE=($("examTitle")?$("examTitle").value.trim():A_TITLE)||A_TITLE;
+  if(!A_TITLE){ alert("시험 제목을 입력해 주세요."); return; }
+  const empty=A_ANSWERS.filter(q=>q.type==="mc"?!q.a.length:!q.aText).map(q=>q.n);
+  if(empty.length && !confirm("정답이 비어 있는 문항: "+empty.join(", ")+"번\n(이 문항들은 채점에서 제외됩니다) 그래도 저장할까요?")) return;
+  const slug=slugify(A_TITLE);
+  const payload={
+    title:A_TITLE, slug, savedAt:new Date().toISOString(),
+    n:A_ANSWERS.length, visible:true, pdf:A_PDF||"",
+    answers:A_ANSWERS.map(q=>({n:q.n,type:q.type,a:q.a,aText:q.aText,expl:q.expl||"",img:A_QIMGS[q.n]||""}))
+  };
+  const box=document.createElement("div");
+  try{
+    const r=await fetch(FB+"/grader_exams/"+encodeURIComponent(slug)+".json",{method:"PUT",body:JSON.stringify(payload)});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const sUrl=location.origin+location.pathname+"?set="+encodeURIComponent(slug);
+    const rUrl=location.origin+location.pathname+"?mode=results";
+    $("app").innerHTML=`<div class="card" style="text-align:center;background:var(--green-l);border-color:var(--green)">
+      <div style="font-size:30px">✅</div>
+      <div style="font-size:17px;font-weight:700;margin:8px 0">저장 완료!</div>
+      <div style="font-size:14px;color:var(--green-d)">${esc(A_TITLE)} · ${A_ANSWERS.length}문항</div>
+    </div>
+    <div class="card"><div class="label">학생에게 줄 주소</div>
+      <input type="text" readonly value="${sUrl}" onclick="this.select()" style="font-size:13px">
+      <div style="font-size:12.5px;color:var(--soft);margin-top:6px">학생은 이 주소로 들어가 이름을 넣고 답만 입력하면 됩니다.</div>
+    </div>
+    <div class="card"><div class="label">결과 현황판 주소 (선생님용)</div>
+      <input type="text" readonly value="${rUrl}" onclick="this.select()" style="font-size:13px">
+    </div>
+    <div class="dock"><button class="btn btn-main" onclick="renderAdminUpload()">새 시험 등록</button>
+      <button class="btn btn-line" onclick="location.href='?mode=results'">결과 보기</button></div>`;
+  }catch(e){ alert("저장 실패: "+e.message+"\n(해설 이미지가 너무 크면 실패할 수 있어요. 페이지 수가 많으면 화질을 낮춰야 합니다.)"); }
+}
+</script>
+<script>
+/* ===================== 학생 ===================== */
+let S_EXAM=null, S_SLUG="", S_STUDENT="", S_SEL={}, graded=false;
+
+function getStudentName(){
+  try{
+    const p=new URLSearchParams(location.search).get('student');
+    if(p) return p;
+    return sessionStorage.getItem('terrys_grader_student')||'';
+  }catch(e){ return ''; }
+}
+function renderStudentStart(){
+  const directSet=new URLSearchParams(location.search).get('set');
+  S_STUDENT=getStudentName();
+  if(S_STUDENT){ directSet?openStudentExam(directSet):listStudentExams(); return; }
+  $("app").innerHTML=`<div class="card">
+      <div class="label">이름</div>
+      <input type="text" id="nm" placeholder="이름을 입력하세요" autocomplete="off">
+      <button class="btn btn-main btn-wide" onclick="setStuName('${directSet||''}')">시작하기</button>
+    </div>`;
+  $("nm").focus();
+  $("nm").addEventListener("keydown",e=>{if(e.key==="Enter")setStuName(directSet||'');});
+}
+function setStuName(directSet){
+  const v=$("nm").value.trim(); if(!v){alert("이름을 입력해 주세요.");return;}
+  S_STUDENT=v; try{sessionStorage.setItem('terrys_grader_student',v);}catch(e){}
+  directSet?openStudentExam(directSet):listStudentExams();
+}
+
+async function listStudentExams(){
+  $("app").innerHTML=`<div class="state"><div class="spin"></div>시험 목록 불러오는 중…</div>`;
+  const data=await listExamsRaw();
+  const exams=[];
+  if(data&&typeof data==="object") for(const k in data){ const e=data[k]; if(e && (e.answers||e.kind==="passage") && e.visible!==false) exams.push({slug:k,...e}); }
+  exams.sort(examSort);
+  if(!exams.length){ $("app").innerHTML=`<div class="state"><div class="big">🗒️</div>지금 풀 수 있는 시험이 없습니다.<br><span style="font-size:13px;color:var(--soft)">선생님이 이번 주 시험을 열면 여기에 보여요.</span></div>`; return; }
+  let h=`<div class="card" style="background:var(--green-l);border-color:var(--green)"><b>${esc(S_STUDENT)}</b> 학생, 풀 시험을 선택하세요.</div><div class="examlist">`;
+  exams.forEach(e=>{
+    const isP = e.kind==="passage";
+    const meta = isP ? "본문 채점 · 타이핑 또는 사진" : `${e.n||(e.answers?e.answers.length:0)}문항 · 100점`;
+    const icon = isP ? "✍️" : (e.title?e.title.slice(0,1):"E");
+    h+=`<div class="exam-item" onclick="openStudentExam('${esc(e.slug)}')">
+    <div class="exam-dot">${esc(icon)}</div><div class="exam-info"><div class="exam-title">${esc(e.title)}</div>
+    <div class="exam-meta">${meta}</div></div><div class="exam-go">›</div></div>`;
+  });
+  h+=`</div>`;
+  $("app").innerHTML=h;
+}
+
+async function openStudentExam(slug){
+  S_SLUG=slug; graded=false; S_SEL={};
+  $("app").innerHTML=`<div class="state"><div class="spin"></div>시험 불러오는 중…</div>`;
+  const e=await fetchExam(slug);
+  if(!e){ $("app").innerHTML=`<div class="state"><div class="big">⚠</div>시험을 찾을 수 없습니다.</div>`; return; }
+  S_EXAM=e;
+  if(e.kind==="passage"){ renderPassageStudent(); return; }
+  if(!e.answers){ $("app").innerHTML=`<div class="state"><div class="big">⚠</div>시험을 찾을 수 없습니다.</div>`; return; }
+  renderAnswerSheet();
+}
+function leaveExam(){
+  // 풀던 답은 자동저장돼 있으니 안내 후 목록으로
+  saveDraft();
+  listStudentExams();
+}
+
+function renderAnswerSheet(){
+  $("topTitle").textContent="답안 입력";
+  $("topSub").textContent="종이 시험지를 보고 답만 입력하세요";
+  const A=S_EXAM.answers;
+  let h=`<button class="btn btn-ghost backbtn" onclick="leaveExam()">← 목록으로</button>
+    <div class="card" style="text-align:center">
+    <div style="font-size:13px;color:var(--soft)">${esc(S_STUDENT)} 학생</div>
+    <div style="font-size:18px;font-weight:700;margin-top:3px">${esc(S_EXAM.title)}</div>
+    <div style="font-size:12.5px;color:var(--soft);margin-top:3px">${A.length}문항 · 답만 입력하고 제출하세요</div></div>
+    <div class="ansgrid" id="ansgrid">`;
+  A.forEach((q,i)=>{
+    const multi = q.type==="mc" && q.a.length>1;
+    h+=`<div class="qrow" id="qr${i}"><div class="qnum">${q.n}번${multi?'<span class="multi-tag">복수</span>':''}</div>`;
+    // 문제 이미지는 채점 후에만 보여줌 (입력 중에는 숨김). 숨겨둔 채로 심어둠.
+    if(q.img) h+=`<img class="qimg" id="qimg${i}" src="${q.img}" alt="${q.n}번 문제" loading="lazy" style="display:none">`;
+    if(q.type==="mc"){
+      h+=`<div class="opts">`;
+      for(let j=0;j<5;j++) h+=`<button class="opt${multi?' multi':''}" id="o${i}_${j}" onclick="tap(${i},${j},${multi})">${CIRC[j]}</button>`;
+      h+=`</div>`;
+    }else{
+      h+=`<input class="sa-in" id="sa${i}" placeholder="정답 입력" autocomplete="off" oninput="saveDraft()">`;
+    }
+    h+=`</div>`;
+  });
+  h+=`</div><div class="dock"><button class="btn btn-ghost" onclick="leaveExam()">← 목록으로</button><button class="btn btn-main" onclick="gradeNow()">제출하고 채점하기</button></div>`;
+  $("app").innerHTML=h;
+  applyMCDraft();
+  const d=loadDraft();
+  if(d){ const note=document.createElement("div"); note.className="resume-note"; note.textContent="이어풀기 — 지난번 입력한 답을 불러왔어요"; $("app").insertBefore(note, $("app").firstChild.nextSibling); }
+  window.scrollTo(0,0);
+}
+function tap(i,j,multi){
+  if(graded) return;
+  if(!S_SEL[i]) S_SEL[i]=[];
+  if(multi){
+    const k=S_SEL[i].indexOf(j);
+    if(k>=0){ S_SEL[i].splice(k,1); $("o"+i+"_"+j).classList.remove("sel"); }
+    else { S_SEL[i].push(j); $("o"+i+"_"+j).classList.add("sel"); }
+  }else{
+    S_SEL[i]=[j];
+    for(let x=0;x<5;x++){ const el=$("o"+i+"_"+x); if(el) el.classList.toggle("sel",x===j); }
+  }
+  saveDraft();
+}
+
+/* ---------- 임시저장(자동) : 풀던 답을 이 기기에 보관 ---------- */
+function draftKey(){ return "terrys_draft_"+(S_STUDENT||"_")+"_"+(S_SLUG||"_"); }
+function saveDraft(){
+  if(graded) return;
+  try{
+    const sa={};
+    document.querySelectorAll("[id^='sa']").forEach(el=>{ if(el.id.match(/^sa\d+$/)) sa[el.id]=el.value; });
+    localStorage.setItem(draftKey(), JSON.stringify({sel:S_SEL, sa, ts:Date.now()}));
+  }catch(e){}
+}
+function loadDraft(){
+  try{ const r=localStorage.getItem(draftKey()); return r?JSON.parse(r):null; }catch(e){ return null; }
+}
+function clearDraft(){ try{ localStorage.removeItem(draftKey()); }catch(e){} }
+function applyMCDraft(){
+  const d=loadDraft(); if(!d) return;
+  if(d.sel){ S_SEL=d.sel;
+    Object.keys(S_SEL).forEach(i=>{ (S_SEL[i]||[]).forEach(j=>{ const el=$("o"+i+"_"+j); if(el) el.classList.add("sel"); }); });
+  }
+  if(d.sa){ Object.keys(d.sa).forEach(id=>{ const el=$(id); if(el) el.value=d.sa[id]; }); }
+}
+
+function normWords(s){ return (s||"").toLowerCase().replace(/[^a-z0-9가-힣\s]/g," ").split(/\s+/).filter(Boolean); }
+function gradeSA(input,ansText){
+  const a=normWords(ansText).join(" "); const inp=normWords(input).join(" ");
+  return a!=="" && (inp===a || inp.includes(a));
+}
+
+function gradeNow(){
+  if(graded) return;
+  const A=S_EXAM.answers;
+  // 채점 대상: 정답이 있는 문항만
+  const scored=A.filter(q=>q.type==="mc"?q.a.length:q.aText);
+  const per=scored.length?100/scored.length:0;
+  let score=0; const wrong=[];
+  A.forEach((q,i)=>{
+    const has = q.type==="mc"?q.a.length:!!q.aText;
+    let ok=false, mine=[];
+    if(q.type==="mc"){
+      mine=S_SEL[i]||[];
+      ok = has && mine.length===q.a.length && mine.every(x=>q.a.includes(x));
+    }else{
+      const v=($("sa"+i)?$("sa"+i).value:"")||"";
+      ok = has && gradeSA(v,q.aText);
+      if($("sa"+i)) $("sa"+i).disabled=true;
+    }
+    if(has){ if(ok) score+=per; else wrong.push(q.n); }
+    // 채점 표시 (정답 있는 문항만)
+    const row=$("qr"+i);
+    if(has){
+      row.classList.add(ok?"is-correct":"is-wrong");
+      const qimg=$("qimg"+i); if(qimg) qimg.style.display="block";
+      const mk=document.createElement("div"); mk.className="mark";
+      mk.innerHTML = ok
+        ? `<svg viewBox="0 0 60 60"><path class="pen" d="M30 7 C46 7 55 18 55 30 C55 44 44 53 30 53 C15 53 5 43 5 29 C5 16 16 8 31 7"/></svg>`
+        : `<svg viewBox="0 0 60 60"><path class="pen" d="M48 10 L12 50"/></svg>`;
+      row.appendChild(mk);
+      // 정답 표시
+      if(q.type==="mc"){
+        q.a.forEach(x=>{ const el=$("o"+i+"_"+x); if(el&&!el.classList.contains("sel")) el.style.outline="2px solid var(--ok)"; });
+      }
+      // 정답/내답 + 해설 (각 문항 아래)
+      const myStr = q.type==="mc"
+        ? (mine.length?mine.map(x=>CIRC[x]).join(", "):"(무응답)")
+        : (($("sa"+i)?$("sa"+i).value:"")||"(무응답)");
+      const ansStr = q.type==="mc" ? q.a.map(x=>CIRC[x]).join(", ") : esc(q.aText);
+      let info=`<div class="qfeed ${ok?'ok':'bad'}">
+        <div class="qfeed-line"><b>${ok?'○ 정답':'✗ 오답'}</b> &nbsp;|&nbsp; 내 답: ${esc(myStr)} &nbsp;|&nbsp; 정답: ${ansStr}</div>`;
+      if(q.expl) info+=`<div class="qexpl"><b>해설</b> ${esc(q.expl)}</div>`;
+      info+=`</div>`;
+      row.insertAdjacentHTML("beforeend",info);
+    }
+    if(q.type==="mc") for(let x=0;x<5;x++){ const el=$("o"+i+"_"+x); if(el) el.disabled=true; }
+  });
+  score=Math.round(score);
+  graded=true;
+  clearDraft();
+
+  // 학생의 실제 답을 저장해 두면, 나중에 선생님이 정답을 고치거나
+  // 주관식을 수동 채점할 때 다시 채점할 수 있다.
+  const sel={}, saByN={};
+  A.forEach((q,i)=>{
+    if(q.type==="mc"){ sel[q.n]=(S_SEL[i]||[]).slice().sort((a,b)=>a-b); }
+    else { saByN[q.n]=($("sa"+i)?$("sa"+i).value:"")||""; }
+  });
+
+  // 틀린 문제를 맨 위로 정렬 (오답 → 정답 → 채점안함 순, 각 그룹 내 원래 번호 순서 유지)
+  const gridEl=$("ansgrid");
+  if(gridEl){
+    const rows=[...gridEl.children];
+    const rank=el=> el.classList.contains("is-wrong")?0 : el.classList.contains("is-correct")?1 : 2;
+    rows.sort((a,b)=> rank(a)-rank(b));
+    rows.forEach(r=>gridEl.appendChild(r));
+  }
+
+  const banner=`<div class="banner">
+    <div class="who">${esc(S_STUDENT)} 학생의 점수</div>
+    <div class="pts">${score}<small> / 100점</small></div>
+    <div class="line">${wrong.length?"틀린 문항: "+wrong.join(", ")+"번":"전부 정답! 🎉"}</div>
+    <div class="save" id="saveState">기록 저장 중…</div></div>`;
+  $("app").insertAdjacentHTML("afterbegin",banner);
+  // 채점 후엔 한 문항씩 넓게 보이도록 1열로
+  const grid=$("ansgrid"); if(grid){ grid.style.gridTemplateColumns="1fr"; }
+  $("ansgrid").insertAdjacentHTML("beforebegin",`<div class="card" style="background:#fffafa;border-color:#f3c0c2"><b style="color:var(--bad)">📝 채점 결과 — 틀린 문제부터 보여드려요 (각 문항 아래 정답·해설)</b></div>`);
+  document.querySelector(".dock").innerHTML=`<button class="btn btn-ghost" onclick="renderAnswerSheet()">다시 풀기</button>
+    <button class="btn btn-main" onclick="listStudentExams()">다른 시험</button>`;
+  window.scrollTo({top:0,behavior:"smooth"});
+
+  saveResult(score,wrong,sel,saByN);
+}
+
+async function saveResult(score,wrong,sel,saByN){
+  const st=$("saveState");
+  try{
+    await fetch(FB+"/results_grader_"+S_SLUG+".json",{method:"POST",body:JSON.stringify({
+      name:S_STUDENT, exam:S_EXAM.title, score, total:100, wrong,
+      sel:sel||{}, sa:saByN||{}, ts:new Date().toISOString()})});
+    if(st){ st.textContent="✓ 기록 저장 완료"; st.style.color="var(--green-d)"; }
+  }catch(e){ if(st){ st.textContent="기록 저장 실패 (인터넷 확인)"; st.style.color="var(--bad)"; } }
+}
+
+/* ===================== 결과 현황판 (선생님) ===================== */
+let R_DATA={};
+async function renderResults(){
+  $("topTitle").textContent="채점 현황판";
+  $("topSub").textContent="학생별로 무엇을 틀렸는지 한눈에";
+  $("app").innerHTML=`<div class="state"><div class="spin"></div>시험 목록 불러오는 중…</div>`;
+  const data=await listExamsRaw();
+  const exams=[];
+  if(data&&typeof data==="object") for(const k in data){ const e=data[k]; if(e && (e.answers||e.kind==="passage")) exams.push({slug:k,title:e.title,n:e.kind==="passage"?"본문":(e.n||e.answers.length),kind:e.kind||"mc",savedAt:e.savedAt,order:e.order,answers:e.answers||[],visible:e.visible!==false}); }
+  exams.sort(examSort);
+  if(!exams.length){ $("app").innerHTML=`<div class="state"><div class="big">🗒️</div>등록된 시험이 없습니다.</div>`; return; }
+  R_DATA.exams=exams;
+  let h=navTabs("results")+`<div class="card"><div class="label">시험 선택</div>
+    <select id="rSel" onchange="loadResultGrid()" style="width:100%;font-family:inherit;font-size:15px;border:1.5px solid #d1d5db;border-radius:10px;padding:11px 13px;cursor:pointer">
+      <option value="">— 시험을 선택하세요 —</option>
+      ${exams.map((e,i)=>`<option value="${i}">${esc(e.title)}</option>`).join("")}
+    </select></div><div id="gridBox"></div>
+    <div class="card" style="margin-top:14px">
+      <div class="label">📅 주간 시험 관리</div>
+      <div style="font-size:12.5px;color:var(--soft);margin-bottom:10px;line-height:1.5">↑↓ 버튼으로 순서를 바꿀 수 있어요. 이 순서대로 학생 목록에도 보입니다. ‘노출 ON’ 인 시험만 학생에게 보이고, 삭제하면 정답·문제·학생 결과가 모두 사라져 되돌릴 수 없어요.</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${exams.map((e,i)=>`<div style="display:flex;align-items:center;gap:10px;border:1.5px solid ${e.visible?'var(--green)':'var(--line)'};background:${e.visible?'var(--green-l)':'#fafafa'};border-radius:10px;padding:9px 12px">
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <button class="btn" title="위로" ${i===0?'disabled':''} onclick="moveExam(${i},-1)" style="padding:0;width:24px;height:20px;font-size:12px;line-height:1;background:${i===0?'#f3f4f6':'#fff'};border:1px solid #d1d5db;color:${i===0?'#cbd5e1':'#374151'};border-radius:6px;cursor:${i===0?'default':'pointer'}">▲</button>
+            <button class="btn" title="아래로" ${i===exams.length-1?'disabled':''} onclick="moveExam(${i},1)" style="padding:0;width:24px;height:20px;font-size:12px;line-height:1;background:${i===exams.length-1?'#f3f4f6':'#fff'};border:1px solid #d1d5db;color:${i===exams.length-1?'#cbd5e1':'#374151'};border-radius:6px;cursor:${i===exams.length-1?'default':'pointer'}">▼</button>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px">
+              <span style="cursor:pointer;overflow:hidden;text-overflow:ellipsis" onclick="previewExam('${esc(e.slug)}')">${esc(e.title)} <span style="color:var(--brand);font-size:12px">🔍</span></span>
+              <button class="btn" title="제목 수정" onclick="renameExam('${esc(e.slug)}',this)" data-title="${esc(e.title).replace(/"/g,'&quot;')}" style="flex-shrink:0;padding:0;width:24px;height:22px;font-size:12px;line-height:1;background:#fff;border:1px solid #d1d5db;color:#374151;border-radius:6px;cursor:pointer">✏️</button>
+            </div>
+            <div style="font-size:11.5px;color:var(--soft)">${e.kind==="passage"?"본문 채점":e.n+"문항"} · ${(e.savedAt||"").slice(0,10)} · ${e.visible?'<b style="color:var(--green-d)">학생에게 노출 중</b>':'<span>숨김</span>'}</div>
+          </div>
+          <button class="btn" style="padding:7px 12px;font-size:12.5px;${e.visible?'background:var(--green);color:#fff;border:none':'background:#fff;border:1.5px solid #d1d5db;color:#374151'}" onclick="toggleVisible('${esc(e.slug)}',${e.visible?1:0})">${e.visible?'노출 ON':'노출 OFF'}</button>
+          <button class="btn" style="background:#fff;border:1.5px solid #fecaca;color:var(--bad);padding:7px 11px;font-size:12.5px" onclick="deleteExam('${esc(e.slug)}','${esc(e.title).replace(/'/g,"")}')">삭제</button>
+        </div>`).join("")}
+      </div>
+    </div>`;
+  $("app").innerHTML=h;
+}
+async function previewExam(slug){
+  const ov=document.createElement("div");
+  ov.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;overflow:auto;padding:16px";
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  ov.innerHTML=`<div style="max-width:720px;margin:0 auto;background:#fff;border-radius:14px;padding:16px"><div class="state"><div class="spin"></div>불러오는 중…</div></div>`;
+  document.body.appendChild(ov);
+  const e=await fetchExam(slug);
+  const box=ov.firstChild;
+  if(!e){ box.innerHTML=`<div style="text-align:center">시험을 찾을 수 없습니다.<br><button class="btn btn-ghost" style="margin-top:10px" onclick="this.closest('div[style*=fixed]').remove()">닫기</button></div>`; return; }
+  const CC=["①","②","③","④","⑤","⑥","⑦","⑧","⑨","⑩"];
+  const head=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px">
+      <b style="font-size:15px">${esc(e.title)}</b>
+      <button class="btn btn-ghost" style="padding:6px 12px" onclick="this.closest('div[style*=fixed]').remove()">닫기 ✕</button></div>`;
+  // 원본 PDF가 저장돼 있으면 그대로 보여줌
+  if(e.pdf){
+    box.innerHTML=head+`<div class="label">업로드한 원본 PDF</div>
+      <iframe src="${e.pdf}" style="width:100%;height:70vh;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
+      <div style="margin-top:8px"><a href="${e.pdf}" download="${esc(e.title)}.pdf" class="btn btn-line" style="display:inline-block;text-decoration:none;padding:8px 14px;font-size:13px">PDF 내려받기</a></div>`;
+    return;
+  }
+  if(e.kind==="passage"){
+    box.innerHTML=head+`<div class="label">정답 본문</div>
+      <div style="font-size:14.5px;line-height:1.8;white-space:pre-wrap;color:var(--ink-2)">${esc(e.text||"")}</div>`;
+    return;
+  }
+  const rows=(e.answers||[]).map(q=>{
+    const ans = q.type==="mc" ? (q.a||[]).map(x=>CC[x]).join(", ") : esc(q.aText||"");
+    return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px">
+      ${q.img?`<img src="${q.img}" style="width:100%;border:1px solid var(--line);border-radius:8px;margin-bottom:8px">`:""}
+      <div style="font-weight:700;font-size:13.5px"><span style="color:var(--brand-d)">${q.n}번</span> · 정답: ${ans||"—"} <span style="font-size:11px;color:var(--soft)">(${q.type==="mc"?"객관식":"서술형"})</span></div>
+      ${q.expl?`<div style="font-size:12.5px;color:#374151;line-height:1.6;margin-top:6px">${esc(q.expl)}</div>`:""}
+    </div>`;
+  }).join("");
+  const imgCnt=(e.answers||[]).filter(q=>q.img).length;
+  box.innerHTML=head+`<div style="font-size:12.5px;color:var(--soft);margin-bottom:10px">${(e.answers||[]).length}문항 · 문제 이미지 ${imgCnt}개</div>
+    <div style="display:flex;flex-direction:column;gap:9px">${rows}</div>`;
+}
+async function deleteStudent(name){
+  const ex=R_DATA.cur && R_DATA.cur.ex; if(!ex) return;
+  if(!confirm(`'${name}' 학생의 '${ex.title}' 기록을 삭제할까요?\n(이 시험의 해당 학생 결과만 지워집니다)`)) return;
+  try{
+    const data=await (await fetch(FB+"/results_grader_"+ex.slug+".json")).json();
+    const dels=[];
+    if(data&&typeof data==="object"){
+      for(const k in data){ if(data[k]&&data[k].name===name){ dels.push(fetch(FB+"/results_grader_"+ex.slug+"/"+k+".json",{method:"DELETE"})); } }
+    }
+    await Promise.all(dels);
+    loadResultGrid();
+  }catch(e){ alert("삭제 실패: "+e.message); }
+}
+async function toggleVisible(slug,curVisible){
+  const next = curVisible?false:true;
+  try{
+    await fetch(FB+"/grader_exams/"+encodeURIComponent(slug)+"/visible.json",{method:"PUT",body:JSON.stringify(next)});
+    renderResults();
+  }catch(e){ alert("변경 실패: "+e.message); }
+}
+// 시험 순서 바꾸기: 현재 화면 순서에서 i번째를 dir(-1 위 / +1 아래)로 이동.
+// 이동 후 전체에 order(0,1,2…)를 다시 매겨 Firebase에 저장 → 모든 화면에 반영.
+async function moveExam(i, dir){
+  const list=(R_DATA.exams||[]).slice();
+  const j=i+dir;
+  if(j<0||j>=list.length) return;
+  [list[i],list[j]]=[list[j],list[i]];
+  list.forEach((e,idx)=>{ e.order=idx; });
+  R_DATA.exams=list;
+  try{
+    // 먼저 저장한 뒤 새로 그린다 (저장 전 재읽기로 옛 순서가 보이는 것 방지)
+    await Promise.all(list.map((e,idx)=>
+      fetch(FB+"/grader_exams/"+encodeURIComponent(e.slug)+"/order.json",
+        {method:"PUT",body:JSON.stringify(idx)})
+    ));
+    renderResults();
+  }catch(e){ alert("순서 저장 실패: "+e.message); renderResults(); }
+}
+// 시험 제목 수정: 새 제목을 입력받아 Firebase에 저장 → 목록·학생화면 모두 반영
+async function renameExam(slug, btn){
+  const cur=(btn&&btn.getAttribute("data-title"))||"";
+  const next=prompt("새 시험 제목을 입력하세요.", cur);
+  if(next===null) return;            // 취소
+  const title=next.trim();
+  if(!title){ alert("제목을 비울 수 없습니다."); return; }
+  if(title===cur) return;            // 변경 없음
+  try{
+    await fetch(FB+"/grader_exams/"+encodeURIComponent(slug)+"/title.json",
+      {method:"PUT",body:JSON.stringify(title)});
+    renderResults();
+  }catch(e){ alert("제목 저장 실패: "+e.message); }
+}
+async function deleteExam(slug,title){
+  if(!confirm(`'${title}' 시험을 삭제할까요?\n\n정답·문제·학생 결과가 모두 삭제되며 되돌릴 수 없습니다.`)) return;
+  try{
+    await fetch(FB+"/grader_exams/"+encodeURIComponent(slug)+".json",{method:"DELETE"});
+    await fetch(FB+"/results_grader_"+slug+".json",{method:"DELETE"});
+    alert("삭제했습니다.");
+    renderResults();
+  }catch(e){ alert("삭제 실패: "+e.message); }
+}
+async function loadResultGrid(){
+  const i=$("rSel").value; if(i==="") { $("gridBox").innerHTML=""; return; }
+  const ex=R_DATA.exams[i];
+  $("gridBox").innerHTML=`<div class="state"><div class="spin"></div>결과 불러오는 중…</div>`;
+  let recs=[];
+  try{
+    const data=await (await fetch(FB+"/results_grader_"+ex.slug+".json")).json();
+    if(data&&typeof data==="object") for(const k in data){ if(data[k]&&data[k].name) recs.push(data[k]); }
+  }catch(e){}
+  if(!recs.length){ $("gridBox").innerHTML=`<div class="state"><div class="big">🗒️</div><b>${esc(ex.title)}</b><br>아직 제출된 결과가 없습니다.</div>`; return; }
+  // 학생별 최고점
+  const best={};
+  recs.forEach(r=>{ const c=best[r.name]; const s=typeof r.score==="number"?r.score:0;
+    if(!c||s>c.score||(s===c.score&&(r.ts||"")>(c.ts||""))) best[r.name]={...r,score:s}; });
+  const students=Object.keys(best).sort((a,b)=>best[b].score-best[a].score);
+
+  // 본문 채점은 문항 O/X 표가 없으므로 점수 목록으로 표시
+  if(ex.kind==="passage"){
+    const nStu=students.length, avg=Math.round(students.reduce((s,n)=>s+best[n].score,0)/nStu);
+    let h=`<div class="card" style="display:flex;gap:18px;justify-content:space-around;text-align:center">
+      <div><div style="font-size:11.5px;color:var(--soft)">응시</div><div style="font-size:23px;font-weight:800">${nStu}명</div></div>
+      <div><div style="font-size:11.5px;color:var(--soft)">평균</div><div style="font-size:23px;font-weight:800">${avg}점</div></div>
+    </div>
+    <div class="card"><div style="font-weight:800;margin-bottom:10px">${esc(ex.title)} — 본문 채점 결과</div>
+    <div style="display:flex;flex-direction:column;gap:7px">`;
+    students.forEach(s=>{ h+=`<div style="display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:10px;padding:9px 13px">
+      <span style="font-weight:700">${esc(s)}</span>
+      <span style="display:inline-flex;align-items:center;gap:10px"><span style="font-weight:800;color:var(--brand-d)">${best[s].score}점</span>
+      <button title="이 학생 기록 삭제" onclick="deleteStudent('${esc(s).replace(/'/g,"")}')" style="background:#fff;border:1px solid #fecaca;color:var(--bad);cursor:pointer;font-size:12px;border-radius:6px;padding:3px 8px">삭제</button></span></div>`; });
+    h+=`</div><div style="font-size:12px;color:var(--soft);margin-top:10px">본문 채점은 맞은 단어 비율로 점수를 냅니다. 사진 제출은 인식 오류가 있을 수 있어요.</div></div>`;
+    $("gridBox").innerHTML=h; return;
+  }
+
+  const maxN=ex.n;
+  const qNums=[]; for(let n=1;n<=maxN;n++) qNums.push(n);
+  // 정답 맵 (문항번호 -> answer 객체)
+  const ansByN={}; (ex.answers||[]).forEach(q=>ansByN[q.n]=q);
+
+  // 각 학생을 저장된 raw 답(sel/sa)으로 다시 채점한다.
+  // (정답 수정·주관식 수동채점 결과를 즉시 반영하기 위함)
+  // 수동 채점 오버라이드: R_DATA.manual[name][n] = true(정답)/false(오답)
+  R_DATA.manual = R_DATA.manual || {};
+  const scored = (ex.answers||[]).filter(q=> q.type==="mc" ? (q.a&&q.a.length) : (q.aText!==undefined));
+  const gradeStudent=(name)=>{
+    const rec=best[name];
+    const man=R_DATA.manual[name]||{};
+    const cell={};       // n -> 'ok'|'bad'|'manual'|'skip'
+    let correct=0, total=0;
+    (ex.answers||[]).forEach(q=>{
+      const n=q.n;
+      const isMC = q.type==="mc";
+      const hasKey = isMC ? (q.a&&q.a.length) : !!(q.aText&&q.aText.trim());
+      // 주관식이거나 정답키가 비면 → 수동 채점 대상
+      const needManual = !isMC || !hasKey;
+      if(needManual){
+        total++; // 채점 대상에 포함 (선생님이 O/X 결정)
+        if(man[n]===true){ cell[n]='ok'; correct++; }
+        else if(man[n]===false){ cell[n]='bad'; }
+        else {
+          // 주관식이고 정답키가 있으면 1차 자동판정으로 미리 채워줌(선생님이 덮어쓸 수 있음)
+          if(!isMC && hasKey){
+            const sv=(rec.sa&&rec.sa[n]!=null)?rec.sa[n]:"";
+            if(sv && gradeSA(sv,q.aText)){ cell[n]='ok'; correct++; }
+            else { cell[n]='manual'; }
+          } else {
+            cell[n]='manual'; // 아직 미채점
+          }
+        }
+        return;
+      }
+      // 객관식 자동 채점
+      total++;
+      // 선생님이 직접 수정한 경우(수동 오버라이드) 최우선 적용
+      if(man[n]===true){ cell[n]='ok'; correct++; return; }
+      if(man[n]===false){ cell[n]='bad'; return; }
+      const sel = (rec.sel&&rec.sel[n]) ? rec.sel[n] : null;
+      if(sel==null){ // 옛 기록이라 raw 답이 없음 → wrong 배열로 판정
+        const wrongList=(rec.wrong||[]).map(Number);
+        if(wrongList.includes(n)){ cell[n]='bad'; }
+        else { cell[n]='ok'; correct++; }
+        return;
+      }
+      const ok = sel.length===q.a.length && sel.every(x=>q.a.includes(x));
+      if(ok){ cell[n]='ok'; correct++; } else { cell[n]='bad'; }
+    });
+    const score = total? Math.round(correct/total*100) : 0;
+    return {cell, score, correct, total};
+  };
+
+  // 전 학생 채점 → 점수순 정렬
+  const graded={};
+  students.forEach(s=> graded[s]=gradeStudent(s));
+  const ranked=[...students].sort((a,b)=> graded[b].score-graded[a].score || a.localeCompare(b));
+
+  // 오답 합계
+  const err={}; qNums.forEach(n=>err[n]=0);
+  ranked.forEach(s=>{ const c=graded[s].cell; qNums.forEach(n=>{ if(c[n]==='bad') err[n]++; }); });
+
+  R_DATA.cur={ex,best,students:ranked,qNums,err,graded,ansByN,gradeStudent};
+
+  const nStu=ranked.length;
+  const avg=Math.round(ranked.reduce((s,n)=>s+graded[n].score,0)/nStu);
+  const hardest=qNums.filter(n=>err[n]>0).sort((a,b)=>err[b]-err[a]);
+  // 미채점(주관식 등) 남은 칸 수
+  let pending=0; ranked.forEach(s=>{ const c=graded[s].cell; qNums.forEach(n=>{ if(c[n]==='manual') pending++; }); });
+
+  let h=`<div class="card" style="display:flex;gap:18px;flex-wrap:wrap;justify-content:space-around;text-align:center">
+    <div><div style="font-size:11.5px;color:var(--soft)">응시</div><div style="font-size:23px;font-weight:700">${nStu}명</div></div>
+    <div><div style="font-size:11.5px;color:var(--soft)">문항</div><div style="font-size:23px;font-weight:700">${maxN}</div></div>
+    <div><div style="font-size:11.5px;color:var(--soft)">평균</div><div style="font-size:23px;font-weight:700">${avg}점</div></div>
+    <div><div style="font-size:11.5px;color:var(--soft)">오답 문항</div><div style="font-size:23px;font-weight:700;color:var(--orange-d)">${hardest.length}</div></div>
+  </div>`;
+  if(pending){
+    h+=`<div class="card" style="background:#fff7ed;border-color:#fdba74;color:#9a3412;font-size:13.5px">
+      ✍️ 수동 채점이 필요한 칸이 <b>${pending}개</b> 있어요 (주관식·정답 미입력 문항). 표에서 <b>노란 칸</b>을 눌러 ○/✗를 정하면 점수에 바로 반영됩니다.</div>`;
+  }
+  if(hardest.length){
+    h+=`<div class="card" style="background:linear-gradient(135deg,var(--orange-l),#fff);border-color:var(--orange)">
+      <div style="font-size:14px;font-weight:700;color:var(--orange-d);margin-bottom:8px">🎯 오답 많은 문항</div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px">${hardest.slice(0,12).map(n=>`<span style="background:#fff;border:1.5px solid var(--orange);color:var(--orange-d);border-radius:9px;padding:6px 11px;font-size:13px;font-weight:700">${n}번 <span style="opacity:.7;font-size:11.5px">${err[n]}명</span></span>`).join("")}</div></div>`;
+  }
+
+  // ===== 성적표 (고정폭 표) =====
+  const CW=34;          // 문항 칸 너비(px) — 모든 칸 동일
+  const NAMEW=92;       // 학생 이름칸 너비
+  const SCW=58;         // 점수칸 너비
+  h+=`<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+      <b>${esc(ex.title)} <span style="font-size:12px;color:var(--soft);font-weight:600">· 득점순</span></b>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-line" style="padding:7px 13px;font-size:13px" onclick="editKey()">✏️ 정답 수정</button>
+        <button class="btn btn-line" style="padding:7px 13px;font-size:13px" onclick="showExpl()">📘 정답·해설</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+    <table class="rgrid" style="border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:13px">
+      <colgroup>
+        <col style="width:${NAMEW}px"><col style="width:42px">`;
+  qNums.forEach(()=>{ h+=`<col style="width:${CW}px">`; });
+  h+=`<col style="width:${SCW}px"></colgroup>
+      <thead><tr>
+        <th class="rgrid-name" style="left:0;text-align:left;padding:0 8px">학생</th>
+        <th style="font-size:11px;color:var(--soft)">석차</th>`;
+  qNums.forEach(n=>{ const hot=nStu&&err[n]/nStu>=0.5&&err[n]>0;
+    h+=`<th style="color:${hot?'var(--bad)':'#374151'};font-weight:700">${n}</th>`; });
+  h+=`<th style="border-left:2px solid #eef0ef">점수</th></tr></thead><tbody>`;
+  ranked.forEach((s,ri)=>{
+    const g=graded[s];
+    h+=`<tr>
+      <td class="rgrid-name" style="left:0;text-align:left;padding:0 8px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+        <span style="display:inline-flex;align-items:center;gap:6px">${esc(s)}
+        <button title="이 학생 기록 삭제" onclick="deleteStudent('${esc(s).replace(/'/g,"")}')" style="border:1px solid #fecaca;background:#fff;color:var(--bad);cursor:pointer;font-size:11px;border-radius:5px;width:18px;height:18px;line-height:1;padding:0">✕</button></span></td>
+      <td style="color:var(--soft);font-weight:700;font-size:12px">${ri+1}</td>`;
+    qNums.forEach(n=>{
+      const st=g.cell[n];
+      let bg='#fff',col='#cbd5e1',txt='·',cur='default',title='';
+      if(st==='ok'){ bg='var(--ok-l)'; col='var(--ok)'; txt='○'; }
+      else if(st==='bad'){ bg='var(--bad-l)'; col='var(--bad)'; txt='✗'; }
+      else if(st==='manual'){ bg='#fff7ed'; col='#d97706'; txt='?'; cur='pointer'; title='눌러서 ○/✗ 채점'; }
+      else { bg='#fafafa'; col='#cbd5e1'; txt='·'; } // skip
+      // 채점된 칸(○/✗/?)은 모두 클릭해 O↔X 수정 가능
+      const clickable = (st==='manual'||st==='ok'||st==='bad');
+      const handler = clickable?`onclick="cycleManual('${esc(s).replace(/'/g,"")}',${n})"`:'';
+      if(clickable){ cur='pointer'; if(!title) title='눌러서 ○/✗ 전환'; }
+      h+=`<td ${handler} title="${title}" style="height:36px;border-bottom:1px solid #f1f3f2;font-weight:700;background:${bg};color:${col};cursor:${cur};text-align:center">${txt}</td>`;
+    });
+    h+=`<td style="border-left:2px solid #eef0ef;font-weight:800;color:var(--brand-d);text-align:center">${g.score}</td></tr>`;
+  });
+  h+=`<tr><td class="rgrid-name" style="left:0;text-align:left;padding:0 8px;color:var(--soft);font-size:11.5px;font-weight:700;border-top:2px solid #eef0ef">오답합계</td>
+    <td style="border-top:2px solid #eef0ef"></td>`;
+  qNums.forEach(n=>{ h+=`<td style="height:28px;border-top:2px solid #eef0ef;color:${err[n]?'var(--bad)':'#d1d5db'};font-weight:700;font-size:11.5px;text-align:center">${err[n]||'·'}</td>`; });
+  h+=`<td style="border-top:2px solid #eef0ef"></td></tr></tbody></table></div>
+    <div style="font-size:11.5px;color:var(--soft);margin-top:8px">
+      ○ 정답 · ✗ 오답 · <span style="color:#d97706;font-weight:700">?</span> 수동 채점 대기 (주관식/정답 미입력). 노란 칸을 누르면 ○→✗→○ 으로 바뀌고 점수가 즉시 갱신됩니다.</div>
+  </div>`;
+  $("gridBox").innerHTML=h;
+}
+
+// 이 문항이 '학생별 수동 채점' 대상인지 (주관식 또는 정답키 비어있음)
+function needsManualCell(q){
+  if(!q) return false;
+  if(q.type!=="mc") return true;
+  return !(q.a && q.a.length);
+}
+// 칸 클릭 → O/X 수동 수정. 객관식·주관식 모두 가능.
+// 객관식: 자동판정 → (반대로 강제) → 다시 누르면 또 반대 → … 토글
+// 길게 눌러 자동복귀가 필요하면 ✕표시 학생삭제와 헷갈리지 않게 그냥 토글만 제공
+function cycleManual(name,n){
+  const cur=R_DATA.cur; if(!cur) return;
+  R_DATA.manual=R_DATA.manual||{};
+  const m=R_DATA.manual[name]=R_DATA.manual[name]||{};
+  const v=m[n];
+  if(v===true){ m[n]=false; }       // 정답(수동) → 오답(수동)
+  else if(v===false){ m[n]=true; }  // 오답(수동) → 정답(수동)
+  else {
+    // 아직 수동값 없음: 현재 화면 상태(자동판정 포함)의 반대로 정함
+    const shown = cur.graded[name] && cur.graded[name].cell[n];
+    m[n] = (shown==='ok') ? false : true;
+  }
+  loadResultGrid(); // 다시 그려 점수·정렬 반영
+}
+// 결과 화면에서 정답키 바로 수정
+function editKey(){
+  const ex=R_DATA.cur&&R_DATA.cur.ex; if(!ex) return;
+  const CC=["①","②","③","④","⑤","⑥","⑦","⑧","⑨","⑩"];
+  const ov=document.createElement("div");
+  ov.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60;overflow:auto;padding:16px";
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  let rows=(ex.answers||[]).map(q=>{
+    const val = q.type==="mc" ? (q.a||[]).map(x=>x+1).join(",") : (q.aText||"");
+    return `<div style="display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:10px;padding:8px 10px">
+      <span style="font-weight:800;color:var(--brand-d);min-width:34px">${q.n}번</span>
+      <input data-n="${q.n}" value="${esc(val)}" placeholder="${q.type==='mc'?'번호 (예: 3 또는 2,5)':'정답 단어'}"
+        style="flex:1;border:1.5px solid var(--line);border-radius:8px;padding:7px 9px;font-size:14px">
+      <span style="font-size:11.5px;color:var(--soft);min-width:38px">${q.type==='mc'?'객관':'주관'}</span>
+    </div>`;
+  }).join("");
+  ov.innerHTML=`<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:14px;padding:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <b style="font-size:15px">정답 수정 — ${esc(ex.title)}</b>
+      <button class="btn btn-ghost" style="padding:6px 12px" onclick="this.closest('div[style*=fixed]').remove()">취소 ✕</button></div>
+    <div style="font-size:12.5px;color:var(--soft);margin-bottom:12px">객관식은 번호(복수정답은 2,5), 주관식은 정답 단어. 저장하면 모든 학생이 새 정답으로 다시 채점됩니다.</div>
+    <div style="display:flex;flex-direction:column;gap:7px;max-height:60vh;overflow:auto">${rows}</div>
+    <div style="display:flex;gap:9px;margin-top:14px">
+      <button class="btn btn-ghost" style="flex:1" onclick="this.closest('div[style*=fixed]').remove()">취소</button>
+      <button class="btn btn-main" style="flex:2" onclick="saveKeyEdits(this)">저장하고 다시 채점</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+}
+async function saveKeyEdits(btn){
+  const ex=R_DATA.cur&&R_DATA.cur.ex; if(!ex) return;
+  const ov=btn.closest('div[style*=fixed]');
+  const inputs=ov.querySelectorAll('input[data-n]');
+  const byN={}; (ex.answers||[]).forEach(q=>byN[q.n]=q);
+  inputs.forEach(inp=>{
+    const n=+inp.getAttribute('data-n'); const q=byN[n]; if(!q) return;
+    const v=inp.value.trim();
+    if(q.type==="mc"){
+      const arr=v.split(/[,\s]+/).map(x=>parseInt(x)).filter(x=>x>=1&&x<=10).map(x=>x-1);
+      q.a=[...new Set(arr)].sort((a,b)=>a-b);
+    }else{
+      q.aText=v;
+    }
+  });
+  btn.textContent="저장 중…"; btn.disabled=true;
+  try{
+    // Firebase의 정답 데이터 갱신
+    await fetch(FB+"/grader_exams/"+encodeURIComponent(ex.slug)+"/answers.json",
+      {method:"PUT",body:JSON.stringify(ex.answers)});
+    // R_DATA.exams 안의 사본도 갱신
+    const idx=$("rSel").value; if(R_DATA.exams[idx]) R_DATA.exams[idx].answers=ex.answers;
+    ov.remove();
+    loadResultGrid(); // 새 정답으로 재채점
+  }catch(e){ alert("저장 실패: "+e.message); btn.textContent="저장하고 다시 채점"; btn.disabled=false; }
+}
+function showExpl(){
+  const ex=R_DATA.cur.ex; const err=R_DATA.cur.err;
+  const CC=["①","②","③","④","⑤","⑥","⑦","⑧","⑨","⑩"];
+  const rows=ex.answers.map(q=>{
+    const ans = q.type==="mc" ? (q.a||[]).map(x=>CC[x]).join(", ") : esc(q.aText||"");
+    const e = err[q.n]||0;
+    return `<div style="border:1px solid var(--line);border-radius:10px;padding:11px 13px">
+      <div style="font-weight:700;font-size:13.5px"><span style="color:var(--green-d)">${q.n}번</span>
+        &nbsp; 정답: ${ans||"—"} ${e?`<span style="color:var(--bad);font-size:12px;font-weight:600">· ${e}명 오답</span>`:""}</div>
+      ${q.expl?`<div style="font-size:13px;color:#374151;line-height:1.6;margin-top:6px">${esc(q.expl)}</div>`:""}
+    </div>`;
+  }).join("");
+  const ov=document.createElement("div");
+  ov.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;overflow:auto;padding:16px";
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  ov.innerHTML=`<div style="max-width:720px;margin:0 auto;background:#fff;border-radius:14px;padding:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <b style="font-size:15px">📘 ${esc(ex.title)} — 정답·해설</b>
+      <button class="btn btn-ghost" style="padding:6px 12px" onclick="this.closest('div[style*=fixed]').remove()">닫기 ✕</button></div>
+    <div style="display:flex;flex-direction:column;gap:9px">${rows}</div></div>`;
+  document.body.appendChild(ov);
+}
+</script>
+<script>
+/* ===================== 본문 채점 (passage) ===================== */
+let P_TITLE="", P_TEXT="";
+
+function renderPassageGate(){
+  if(isAdmin()){ renderPassageEditor(); return; }
+  $("topTitle").textContent="선생님 — 본문 채점 만들기";
+  $("topSub").textContent="교과서 본문을 올리면 그게 정답이 됩니다";
+  $("app").innerHTML=`
+    <div class="card">
+      <div class="label">관리자 확인</div>
+      <input type="text" id="ppw" placeholder="관리자 비밀번호" autocomplete="off">
+      <button class="btn btn-main btn-wide" onclick="passageLogin()">들어가기</button>
+    </div>`;
+  $("ppw").addEventListener("keydown",e=>{if(e.key==="Enter")passageLogin();});
+}
+function passageLogin(){
+  if($("ppw").value!==ADMIN_PW){ alert("비밀번호가 틀렸습니다."); return; }
+  setAdmin(true);
+  renderPassageEditor();
+}
+
+function renderPassageEditor(){
+  $("topTitle").textContent="선생님 — 본문 채점 만들기";
+  $("app").innerHTML=navTabs("passage")+`
+    <div class="card">
+      <div class="label">1. 시험 제목</div>
+      <input type="text" id="pTitle" placeholder="예: 3과 본문 암기 평가" autocomplete="off" value="${esc(P_TITLE)}">
+    </div>
+    <div class="card">
+      <div class="label">2. 정답 본문</div>
+      <div style="font-size:12.5px;color:var(--soft);margin-bottom:9px;line-height:1.55">교과서 본문 PDF를 올리면 영어 본문이 자동으로 들어옵니다. 직접 붙여넣어도 돼요. 빈칸 채우기로 낼 거면, 정답 본문 전체를 넣으세요.</div>
+      <div class="drop" id="pdrop" onclick="$('pfile').click()" style="margin-bottom:11px">
+        <div class="ic">📄</div><div class="t">본문 PDF 올리기</div>
+        <div class="s">또는 아래에 직접 붙여넣기</div>
+      </div>
+      <input type="file" id="pfile" accept="application/pdf" style="display:none">
+      <textarea id="pText" placeholder="여기에 정답 영어 본문을 붙여넣으세요" style="width:100%;min-height:200px;border:1.5px solid var(--line);border-radius:13px;padding:13px 15px;font-size:14.5px;font-family:inherit;line-height:1.7;background:#fbfbfe;resize:vertical">${esc(P_TEXT)}</textarea>
+    </div>
+    <div class="dock">
+      <button class="btn btn-ghost" onclick="location.href='?mode=admin'">객관식 시험으로</button>
+      <button class="btn btn-main" onclick="savePassage()">🔥 본문 시험 저장</button>
+    </div>`;
+  $("pfile").addEventListener("change",async e=>{
+    const file=e.target.files[0]; if(!file) return;
+    const t=$("pdrop").querySelector(".t"); t.textContent="본문 읽는 중…";
+    try{
+      const buf=await file.arrayBuffer();
+      const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+      let txt="";
+      for(let p=1;p<=pdf.numPages;p++){ const pg=await pdf.getPage(p); const tc=await pg.getTextContent(); txt+=tc.items.map(it=>it.str).join(" ")+"\n"; }
+      // 영어 위주 라인만 남기고 정리
+      txt=txt.replace(/[ \t]+/g," ").replace(/\n{2,}/g,"\n").trim();
+      $("pText").value=txt;
+      t.textContent="✅ 본문을 불러왔어요 — 아래에서 확인·정리하세요";
+    }catch(err){ t.textContent="읽기 실패 — 직접 붙여넣어 주세요"; }
+  });
+  if(!P_TITLE){ const v=new URLSearchParams(location.search); }
+}
+
+async function savePassage(){
+  P_TITLE=$("pTitle").value.trim(); P_TEXT=$("pText").value.trim();
+  if(!P_TITLE){ alert("시험 제목을 입력해 주세요."); return; }
+  if(P_TEXT.length<10){ alert("정답 본문을 넣어 주세요."); return; }
+  const slug=slugify(P_TITLE);
+  const payload={ title:P_TITLE, slug, kind:"passage", savedAt:new Date().toISOString(), visible:true, text:P_TEXT };
+  try{
+    const r=await fetch(FB+"/grader_exams/"+encodeURIComponent(slug)+".json",{method:"PUT",body:JSON.stringify(payload)});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const sUrl=location.origin+location.pathname+"?set="+encodeURIComponent(slug);
+    $("app").innerHTML=`<div class="card" style="text-align:center;background:var(--brand-l);border-color:var(--brand)">
+      <div style="font-size:30px">✅</div>
+      <div style="font-size:17px;font-weight:800;margin:8px 0">본문 시험 저장 완료!</div>
+      <div style="font-size:14px;color:var(--brand-d)">${esc(P_TITLE)}</div></div>
+      <div class="card"><div class="label">학생에게 줄 주소</div>
+        <input type="text" readonly value="${sUrl}" onclick="this.select()" style="font-size:13px"></div>
+      <div class="dock"><button class="btn btn-main" onclick="P_TITLE='';P_TEXT='';renderPassageEditor()">새 본문 시험</button>
+        <button class="btn btn-line" onclick="location.href='?mode=results'">결과 보기</button></div>`;
+  }catch(e){ alert("저장 실패: "+e.message); }
+}
+
+/* ---------- 학생: 본문 채점 ---------- */
+let PS_GRADED=false;
+let PS_MODE="full"; // 'full' | 'blank' | 'photo'
+let PS_BLANKS=null;  // {tokens:[{t,blank,idx}], blankIdx:[..]}
+function renderPassageStudent(){
+  $("topTitle").textContent="본문 채점";
+  $("topSub").textContent="빈칸 비율을 고르거나, 전체를 입력/사진으로 제출하세요";
+  PS_GRADED=false; PS_BLANKS=null;
+  $("app").innerHTML=`
+    <button class="btn btn-ghost backbtn" onclick="leaveExam()">← 목록으로</button>
+    <div class="card" style="text-align:center">
+      <div style="font-size:13px;color:var(--soft)">${esc(S_STUDENT)} 학생</div>
+      <div style="font-size:18px;font-weight:800;margin-top:3px">${esc(S_EXAM.title)}</div>
+      <div style="font-size:12.5px;color:var(--soft);margin-top:3px">정답 본문과 비교해 틀린 부분을 표시해 드려요</div>
+    </div>
+    <div class="card">
+      <div class="label">방식 선택</div>
+      <div class="modepick">
+        <button class="modebtn" data-m="b20" onclick="startBlank(20)">빈칸 20%</button>
+        <button class="modebtn" data-m="b40" onclick="startBlank(40)">빈칸 40%</button>
+        <button class="modebtn" data-m="b60" onclick="startBlank(60)">빈칸 60%</button>
+        <button class="modebtn" data-m="full" onclick="startFull()">전체 쓰기</button>
+        <button class="modebtn" data-m="photo" onclick="startPhoto()">📷 사진</button>
+      </div>
+    </div>
+    <div id="psArea"></div>
+    <div id="psResult"></div>`;
+  // 이어풀기: 저장된 방식이 있으면 복원, 없으면 빈칸 40%
+  const d=loadDraft();
+  if(d && d.pmode==="full"){ startFull(); }
+  else if(d && d.pmode==="blank" && d.ppct){ startBlank(d.ppct); }
+  else { startBlank(40); }
+  window.scrollTo(0,0);
+}
+function setActiveMode(m){
+  document.querySelectorAll(".modebtn").forEach(b=>b.classList.toggle("on",b.dataset.m===m));
+}
+
+const STOPW=new Set("a an the of to in on at for and or but is are was were be been being it its this that these those he she they we you i his her their our your my me as by with from into out up so if not no do does did have has had will would can could may might shall should must".split(" "));
+function pickBlankIdx(toks,pct){
+  const cand=[]; toks.forEach((t,i)=>{ const n=normTok(t); if(n.length>=3 && !STOPW.has(n)) cand.push(i); });
+  const want=Math.max(1,Math.round(toks.length*pct/100));
+  const idx=[...cand]; for(let k=idx.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[idx[k],idx[j]]=[idx[j],idx[k]];}
+  return new Set(idx.slice(0,Math.min(want,idx.length)));
+}
+function savePassageDraft(){
+  if(PS_GRADED) return;
+  try{
+    const o={ts:Date.now()};
+    if(PS_MODE==="full"){ o.pmode="full"; o.pfull=($("psText")?$("psText").value:""); }
+    else if(PS_MODE==="blank" && PS_BLANKS){
+      o.pmode="blank"; o.ppct=PS_BLANKS.pct; o.pblankList=PS_BLANKS.blankList;
+      const fills={}; PS_BLANKS.blankList.forEach((tokIdx,k)=>{ const el=$("bk"+k); fills[k]=el?el.value:""; });
+      o.pfills=fills;
+    }
+    localStorage.setItem(draftKey(), JSON.stringify(o));
+  }catch(e){}
+}
+function startBlank(pct){
+  PS_MODE="blank"; setActiveMode("b"+pct);
+  const toks=tokenize(S_EXAM.text);
+  // 같은 비율의 저장된 빈칸 배치가 있으면 재사용 (이어풀기 정합성)
+  const d=loadDraft();
+  let blankList;
+  if(d && d.pmode==="blank" && d.ppct===pct && Array.isArray(d.pblankList)){ blankList=d.pblankList.slice(); }
+  else { blankList=[...pickBlankIdx(toks,pct)].sort((a,b)=>a-b); }
+  const blanks=new Set(blankList);
+  PS_BLANKS={toks, blankList, pct};
+  let bi=0;
+  const body=toks.map((t,i)=>{
+    if(blanks.has(i)){ const id=bi++; return `<input class="blank-in" id="bk${id}" data-idx="${i}" autocomplete="off" autocapitalize="off" spellcheck="false" oninput="savePassageDraft()">`; }
+    return `<span class="w-plain">${esc(t)}</span>`;
+  }).join(" ");
+  $("psArea").innerHTML=`<div class="card">
+    <div class="label">빈칸 채우기 — 빈칸에 알맞은 영어 단어를 넣으세요 (${blankList.length}칸)</div>
+    <div class="passage-fill">${body}</div>
+    <button class="btn btn-main btn-wide" onclick="gradeBlank()">빈칸 채점하기</button>
+  </div>`;
+  // 저장된 입력 복원
+  if(d && d.pmode==="blank" && d.ppct===pct && d.pfills){
+    Object.keys(d.pfills).forEach(k=>{ const el=$("bk"+k); if(el) el.value=d.pfills[k]; });
+  }
+  savePassageDraft();
+}
+function startFull(){
+  PS_MODE="full"; setActiveMode("full"); PS_BLANKS=null;
+  $("psArea").innerHTML=`<div class="card">
+    <div class="label">전체 쓰기 — 외운 영어 본문을 입력하세요</div>
+    <textarea id="psText" placeholder="외운 영어 본문을 여기에 입력하세요" oninput="savePassageDraft()" style="width:100%;min-height:180px;border:1.5px solid var(--line);border-radius:13px;padding:13px 15px;font-size:15px;font-family:inherit;line-height:1.7;background:#fbfbfe;resize:vertical"></textarea>
+    <button class="btn btn-main btn-wide" onclick="gradePassageTyped()">입력한 답 채점하기</button>
+  </div>`;
+  const d=loadDraft(); if(d && d.pmode==="full" && d.pfull && $("psText")) $("psText").value=d.pfull;
+  savePassageDraft();
+}
+function startPhoto(){
+  PS_MODE="photo"; setActiveMode("photo"); PS_BLANKS=null;
+  $("psArea").innerHTML=`<div class="card">
+    <div class="label">사진으로 제출</div>
+    <div style="font-size:12.5px;color:var(--soft);margin-bottom:10px;line-height:1.55">손으로 쓴 답을 사진 찍어 올리면 AI가 읽어서 채점해요. <b>손글씨·사진 상태에 따라 틀릴 수 있어</b> 선생님이 한 번 더 확인하는 게 좋아요.</div>
+    <div class="drop" id="psdrop" onclick="$('psfile').click()">
+      <div class="ic">📷</div><div class="t">답안 사진 올리기</div>
+      <div class="s">또렷하게, 똑바로 찍을수록 정확해요</div>
+    </div>
+    <input type="file" id="psfile" accept="image/*" style="display:none">
+  </div>`;
+  $("psfile").addEventListener("change",e=>{ if(e.target.files[0]) gradePassagePhoto(e.target.files[0]); });
+}
+
+function gradeBlank(){
+  if(!PS_BLANKS) return;
+  const {toks, blankList}=PS_BLANKS;
+  let correct=0; const out=[]; let bi=0;
+  const filled={};
+  blankList.forEach((tokIdx,k)=>{ const el=$("bk"+k); filled[tokIdx]= el?el.value:""; });
+  const blanksSet=new Set(blankList);
+  toks.forEach((t,i)=>{
+    if(blanksSet.has(i)){
+      const my=normTok(filled[i]||""); const ans=normTok(t);
+      const ok = my!=="" && my===ans;
+      if(ok) correct++;
+      out.push({t, s: ok?"ok":"miss", mine: filled[i]||"", isBlank:true});
+    } else out.push({t, s:"plain"});
+  });
+  const total=blankList.length||1;
+  showPassageResult({ tokens:out, score:Math.round(correct/total*100), correct, total }, "빈칸 "+total+"칸");
+}
+
+// 단어 단위 비교 (LCS 기반 diff)
+function tokenize(s){ return (s||"").replace(/[\u201C\u201D]/g,'"').replace(/[\u2018\u2019]/g,"'").trim().split(/\s+/).filter(Boolean); }
+function normTok(t){ return t.toLowerCase().replace(/^[^a-z0-9']+|[^a-z0-9']+$/g,""); }
+function diffWords(ans, stu){
+  const A=tokenize(ans), B=tokenize(stu);
+  const a=A.map(normTok), b=B.map(normTok);
+  const n=a.length, m=b.length;
+  const dp=Array.from({length:n+1},()=>new Array(m+1).fill(0));
+  for(let i=n-1;i>=0;i--) for(let j=m-1;j>=0;j--)
+    dp[i][j]= a[i]===b[j] ? dp[i+1][j+1]+1 : Math.max(dp[i+1][j],dp[i][j+1]);
+  // 정답 기준으로: 맞음 / 틀림(대체) / 빠짐
+  const out=[]; let i=0,j=0, correct=0;
+  while(i<n && j<m){
+    if(a[i]===b[j]){ out.push({t:A[i],s:"ok"}); correct++; i++; j++; }
+    else if(dp[i+1][j]>=dp[i][j+1]){ out.push({t:A[i],s:"miss"}); i++; }   // 정답 단어를 학생이 놓침
+    else { j++; }                                                          // 학생의 잉여 단어는 표시 안 함(정답 기준)
+  }
+  while(i<n){ out.push({t:A[i],s:"miss"}); i++; }
+  const total=n||1;
+  return { tokens:out, score:Math.round(correct/total*100), correct, total };
+}
+
+function showPassageResult(res, note){
+  PS_GRADED=true;
+  clearDraft();
+  const html=res.tokens.map(w=>{
+    if(w.s==="plain") return `<span class="w-plain">${esc(w.t)}</span>`;
+    if(w.s==="ok") return `<span class="w-ok">${esc(w.t)}</span>`;
+    // miss: 틀리거나 빠진 곳. 빈칸 모드면 학생이 쓴 답도 보여줌
+    if(w.isBlank){
+      const mine=(w.mine||"").trim();
+      return `<span class="w-bad">${esc(w.t)}</span>${mine?`<span class="w-mine">(${esc(mine)})</span>`:`<span class="w-mine">(빈칸)</span>`}`;
+    }
+    return `<span class="w-bad">${esc(w.t)}</span>`;
+  }).join(" ");
+  const banner=`<div class="banner"><div><div class="who">${esc(S_STUDENT)} 학생</div>
+    <div class="pts">${res.score}<small> / 100점</small></div>
+    <div class="line">맞은 단어 ${res.correct} / ${res.total}${note?` · ${note}`:""}</div>
+    <div class="save" id="psSave">기록 저장 중…</div></div></div>`;
+  $("psResult").innerHTML=`${banner}
+    <div class="card">
+      <div class="label">정답 본문과 비교 — 빨간 단어가 정답, 괄호는 내가 쓴 답</div>
+      <div class="passage-diff">${html}</div>
+      <div style="font-size:12px;color:var(--soft);margin-top:10px">초록=맞음, 빨강=정답 단어(내가 틀리거나 빈칸), 괄호=내가 쓴 답</div>
+    </div>
+    <div class="dock"><button class="btn btn-ghost" onclick="renderPassageStudent()">다시 풀기</button>
+      <button class="btn btn-main" onclick="listStudentExams()">다른 시험</button></div>`;
+  window.scrollTo({top:0,behavior:"smooth"});
+  fetch(FB+"/results_grader_"+S_SLUG+".json",{method:"POST",body:JSON.stringify({
+    name:S_STUDENT, exam:S_EXAM.title, score:res.score, total:100, wrong:[], kind:"passage", ts:new Date().toISOString()})})
+    .then(()=>{const s=$("psSave");if(s){s.textContent="✓ 기록 저장 완료";}})
+    .catch(()=>{const s=$("psSave");if(s){s.textContent="기록 저장 실패";}});
+}
+
+function gradePassageTyped(){
+  const stu=$("psText").value.trim();
+  if(stu.length<2){ alert("답을 입력해 주세요."); return; }
+  showPassageResult(diffWords(S_EXAM.text, stu));
+}
+
+async function gradePassagePhoto(file){
+  $("psResult").innerHTML=`<div class="state"><div class="spin"></div><div>AI가 사진 속 글씨를 읽는 중…</div><div class="prog">잠시만요</div></div>`;
+  try{
+    const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(",")[1]); r.onerror=rej; r.readAsDataURL(file); });
+    const media = file.type||"image/jpeg";
+    const prompt = "You are reading a student's handwritten English answer from a photo. Transcribe ONLY the English text you see, exactly as written, with no commentary, no translation, no extra words. If a word is unclear, give your best guess.";
+    const resp = await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ model:"claude-sonnet-4-6", max_tokens:1000,
+        messages:[{role:"user",content:[
+          {type:"image",source:{type:"base64",media_type:media,data:b64}},
+          {type:"text",text:prompt}
+        ]}] })
+    });
+    if(!resp.ok) throw new Error("AI 호출 실패 ("+resp.status+")");
+    const data=await resp.json();
+    const text=(data.content||[]).filter(c=>c.type==="text").map(c=>c.text).join(" ").trim();
+    if(!text) throw new Error("글씨를 읽지 못했어요");
+    showPassageResult(diffWords(S_EXAM.text, text), "사진 인식 결과 (확인 권장)");
+  }catch(e){
+    $("psResult").innerHTML=`<div class="state"><div class="big">📷</div>
+      <div>사진 채점을 사용할 수 없어요.<br><span style="font-size:13px;color:var(--soft)">${esc(e.message)}<br>대신 ‘방법 1. 영어로 입력’으로 채점해 주세요.</span></div></div>`;
+  }
+}
+
+start();
+</script>
+</body>
+</html>
