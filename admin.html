@@ -971,7 +971,7 @@ ${wordsList}
         },
         body:JSON.stringify({
             model:'claude-sonnet-4-6',
-            max_tokens:8000,
+            max_tokens:16000,
             messages:[{role:'user',content:prompt}]
         })
     });
@@ -2913,7 +2913,7 @@ ${answerText}
 
 [출력 형식]
 {"questions":[{"question":"1. ...","presentationBox":"...","options":["...","...","...","..."],"answer":2,"explanation":"..."}]}`;
-    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,messages:[{role:"user",content:prompt}]})});
+    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:16000,messages:[{role:"user",content:prompt}]})});
     if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error?.message||('HTTP '+r.status));}
     const data=await r.json();
     const t=data.content?.find(c=>c.type==="text")?.text||"";
@@ -6038,7 +6038,7 @@ ${getQuestionPrompt(num)}
 - Article 3 Q4 (글의 순서): boxes에 4개 ["도입|||...", "(A)|||...", "(B)|||...", "(C)|||..."]
 - boxes 사용 시 presentationBox는 ""(빈 문자열)`;
     try{
-        const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,messages:[{role:"user",content:prompt}]})});
+        const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:16000,messages:[{role:"user",content:prompt}]})});
         if(!r.ok)return null;
         const data=await r.json();const t=data.content?.find(c=>c.type==="text")?.text||"";
         const p=_safeParseAIJson(t);
