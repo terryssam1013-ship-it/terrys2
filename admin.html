@@ -5819,27 +5819,37 @@ function _safeParseAIJson(raw){
     const a = s.indexOf('{'), b = s.lastIndexOf('}');
     if(a<0 || b<=a) return null;
     s = s.slice(a, b+1);
+    // 내부 헬퍼: 문자열 값 안의 raw 개행/탭을 escape
+    const escNL = (str)=>{
+        let out='', inStr=false, esc=false;
+        for(let i=0;i<str.length;i++){
+            const c=str[i];
+            if(esc){ out+=c; esc=false; continue; }
+            if(c==='\\'){ out+=c; esc=true; continue; }
+            if(c==='"'){ inStr=!inStr; out+=c; continue; }
+            if(inStr){
+                if(c==='\n'){ out+='\\n'; continue; }
+                if(c==='\r'){ out+='\\r'; continue; }
+                if(c==='\t'){ out+='\\t'; continue; }
+            }
+            out+=c;
+        }
+        return out;
+    };
     // 3) 1차: 그대로
     try { return JSON.parse(s); } catch(e){}
     // 4) 2차: 끝쉼표 제거 + 제어문자 공백화
     try { return JSON.parse(s.replace(/,\s*([}\]])/g,'$1').replace(/[\u0000-\u001F]+/g,' ')); } catch(e){}
-    // 5) 3차: 문자열 값 내부의 raw 개행/탭/캐리지리턴을 escape 처리
-    //    (따옴표 안에서만 치환 — 문자열 밖 공백은 건드리지 않음)
-    let out = '', inStr = false, esc = false;
-    for(let i=0;i<s.length;i++){
-        const c = s[i];
-        if(esc){ out += c; esc = false; continue; }
-        if(c === '\\'){ out += c; esc = true; continue; }
-        if(c === '"'){ inStr = !inStr; out += c; continue; }
-        if(inStr){
-            if(c === '\n'){ out += '\\n'; continue; }
-            if(c === '\r'){ out += '\\r'; continue; }
-            if(c === '\t'){ out += '\\t'; continue; }
-        }
-        out += c;
-    }
-    try { return JSON.parse(out.replace(/,\s*([}\]])/g,'$1')); } catch(e){}
-    // 6) 최종 실패
+    // 5) 3차: 문자열 내부 raw 개행 escape
+    try { return JSON.parse(escNL(s).replace(/,\s*([}\]])/g,'$1')); } catch(e){}
+    // 6) 4차: 잘못 escape된 종료 따옴표 교정.
+    //    AI가 값 끝 따옴표에 백슬래시를 잘못 붙여 \" 로 보내면 문자열이 안 닫혀 깨짐.
+    //    \" 뒤에 (공백/개행)* 그리고 } ] , 가 오면 종료 따옴표로 보고 \" -> " 로 교정.
+    try {
+        let fixed = s.replace(/\\"(\s*[}\],])/g, '"$1');
+        return JSON.parse(escNL(fixed).replace(/,\s*([}\]])/g,'$1'));
+    } catch(e){}
+    // 7) 최종 실패
     return null;
 }
 
