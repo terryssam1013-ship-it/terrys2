@@ -6080,7 +6080,15 @@ async function createArticle(){
     const msg=document.getElementById('gen-msg');
     if(msg)msg.textContent='Article '+num+' 생성 중... (AI가 지문을 분석합니다)';
     let result=null,ai=false;
-    if(LS.g('apikey')){result=await generateWithAI(content,num);if(result)ai=true;}
+    if(LS.g('apikey')){
+        result=await generateWithAI(content,num);
+        // null이면 (AI 응답 JSON이 깨진 경우) 최대 2번 더 재시도
+        for(let _try=0; !result && _try<2; _try++){
+            console.log('[자동생성] 응답 파싱 실패, 재시도 '+(_try+1)+'/2...');
+            result=await generateWithAI(content,num);
+        }
+        if(result)ai=true;
+    }
     if(!result)result={vocabulary:[],questions:[]};
     arts.push({title:'Article '+num,content,vocabulary:result.vocabulary,sentenceList:result.sentenceList||result.keySentences||[],keySentences:result.keySentences||result.sentenceList||[],questions:result.questions,aiGenerated:ai});
     saveArticles(articles);
@@ -6167,7 +6175,15 @@ async function saveArticleEdit(){
     const articles=getArticles();
     const num=idx+1;
     let result=null,ai=false;
-    if(LS.g('apikey')){result=await generateWithAI(content,num);if(result)ai=true;}
+    if(LS.g('apikey')){
+        result=await generateWithAI(content,num);
+        // null이면 (AI 응답 JSON이 깨진 경우) 최대 2번 더 재시도
+        for(let _try=0; !result && _try<2; _try++){
+            console.log('[자동생성] 응답 파싱 실패, 재시도 '+(_try+1)+'/2...');
+            result=await generateWithAI(content,num);
+        }
+        if(result)ai=true;
+    }
     if(!result)result={vocabulary:[],questions:[]};
     articles[bookName][unitKey].articles[idx]={...articles[bookName][unitKey].articles[idx],content,vocabulary:result.vocabulary,keySentences:result.keySentences||[],questions:result.questions,aiGenerated:ai};
     saveArticles(articles);alert('수정 완료!');closeModal();
