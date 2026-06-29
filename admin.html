@@ -2917,9 +2917,12 @@ ${answerText}
     const data=await r.json();
     const t=data.content?.find(c=>c.type==="text")?.text||"";
     // 1차: 통째로 파싱 시도
-    const m=t.match(/\{[\s\S]*\}/);
+    let raw=t.replace(/```json/gi,'').replace(/```/g,'').trim();
+    const _s=raw.indexOf('{'), _e=raw.lastIndexOf('}');
+    const m=(_s>=0&&_e>_s)?[raw.slice(_s,_e+1)]:null;
     if(m){
         try{const p=JSON.parse(m[0]);if(p.questions&&p.questions.length>0)return p.questions;}catch(e){}
+        try{const p=JSON.parse(m[0].replace(/,\s*([}\]])/g,'$1').replace(/[\u0000-\u001F]+/g,' '));if(p.questions&&p.questions.length>0)return p.questions;}catch(e){}
     }
     // 2차: 잘렸으면 완성된 객체만 복구
     const salvaged=salvageQuestions(t);
@@ -5998,9 +6001,13 @@ ${getQuestionPrompt(num)}
         const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,messages:[{role:"user",content:prompt}]})});
         if(!r.ok)return null;
         const data=await r.json();const t=data.content?.find(c=>c.type==="text")?.text||"";
-        const m=t.match(/\{[\s\S]*\}/);
+        let raw=t.replace(/```json/gi,'').replace(/```/g,'').trim();
+        const _s=raw.indexOf('{'), _e=raw.lastIndexOf('}');
+        const m=(_s>=0&&_e>_s)?[raw.slice(_s,_e+1)]:null;
         if(m){
-            const p=JSON.parse(m[0]);
+            let p;
+            try{p=JSON.parse(m[0]);}
+            catch(err){p=JSON.parse(m[0].replace(/,\s*([}\]])/g,'$1').replace(/[\u0000-\u001F]+/g,' '));}
             if(p.vocabulary&&p.questions?.length===4){
                 // 호환성: keySentences가 없어도 sentenceList를 keySentences로도 노출
                 if(p.sentenceList&&!p.keySentences){
