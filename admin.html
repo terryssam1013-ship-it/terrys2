@@ -204,7 +204,7 @@ const RL_STORE = {
     }
 };
 
-const LS={g(k){try{return JSON.parse(RL_STORE.get('rl_'+k))}catch{return null}},s(k,v){RL_STORE.set('rl_'+k,JSON.stringify(v))}};
+const LS={g(k){try{return JSON.parse(RL_STORE.get('rl_'+k))}catch{return null}},s(k,v){RL_STORE.set('rl_'+k,JSON.stringify(v))},r(k){try{RL_STORE.remove('rl_'+k)}catch(e){}}};
 // 글로벌 HTML 이스케이프
 function escU(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 // 레벨 정렬: LEVEL 1,2,3 -> MTEST 1,2 순서. 모르는 형식은 끝으로
@@ -491,6 +491,34 @@ function getArticles(){
         });
     });
     return result;
+}
+
+// [안전장치] 지문 저장 직전 자동 백업 — 최근 3개 스냅샷 보관, 복구 가능
+function _backupArticles(articles){
+    try{
+        const snap = JSON.stringify(articles);
+        const now = new Date().toISOString();
+        let meta = [];
+        try{ meta = JSON.parse(LS.g('article_backup_meta')||'[]'); }catch(e){ meta=[]; }
+        const key = 'article_backup_'+Date.now();
+        LS.s(key, snap);
+        meta.unshift({key, time:now});
+        // 최근 3개만 유지, 나머지 삭제
+        while(meta.length>3){ const old=meta.pop(); try{ LS.r(old.key); }catch(e){} }
+        LS.s('article_backup_meta', JSON.stringify(meta));
+    }catch(e){ console.warn('[백업] 실패(무시):', e.message); }
+}
+// 백업에서 복구하는 함수 — 콘솔에서 _restoreArticles() 호출
+function _restoreArticles(n){
+    let meta=[]; try{ meta=JSON.parse(LS.g('article_backup_meta')||'[]'); }catch(e){}
+    if(meta.length===0){ console.log('백업 없음'); return; }
+    console.log('=== 사용 가능한 백업 ===');
+    meta.forEach((m,i)=>console.log(i+': '+m.time));
+    if(n===undefined){ console.log('복구하려면 _restoreArticles(번호) 입력 (예: _restoreArticles(0) = 가장 최근)'); return; }
+    const snap = LS.g(meta[n].key);
+    if(!snap){ console.log('해당 백업 없음'); return; }
+    saveArticles(JSON.parse(snap));
+    console.log('✅ 복구 완료! 새로고침하세요. (백업시각: '+meta[n].time+')');
 }
 
 function saveArticles(articles){
@@ -6089,8 +6117,17 @@ async function createArticle(){
         }
         if(result)ai=true;
     }
-    if(!result)result={vocabulary:[],questions:[]};
+    // [안전장치] 생성 실패(키없음/파싱깨짐) 시 빈 지문을 저장하지 않고 중단 — 기존 데이터 보호
+    if(!result || !result.questions || result.questions.length===0){
+        if(st)st.style.display='none'; if(btn)btn.disabled=false;
+        const noKey = !LS.g('apikey');
+        alert(noKey
+            ? '⚠️ 이 창에 API 키가 없어 생성하지 못했습니다.\n\n빈 상태로 저장하지 않았습니다. 설정에서 API 키를 확인한 뒤 다시 시도하세요.'
+            : '⚠️ AI 응답을 처리하지 못했습니다 (일시적 오류).\n\n빈 상태로 저장하지 않았습니다. 잠시 후 다시 시도하세요.');
+        return;
+    }
     arts.push({title:'Article '+num,content,vocabulary:result.vocabulary,sentenceList:result.sentenceList||result.keySentences||[],keySentences:result.keySentences||result.sentenceList||[],questions:result.questions,aiGenerated:ai});
+    _backupArticles(articles); // 저장 전 백업
     saveArticles(articles);
     if(document.getElementById('art-content'))document.getElementById('art-content').value='';
     if(st)st.style.display='none';if(btn)btn.disabled=false;
@@ -6184,8 +6221,22 @@ async function saveArticleEdit(){
         }
         if(result)ai=true;
     }
-    if(!result)result={vocabulary:[],questions:[]};
+    // [안전장치] 생성 실패 시 기존 단어·문제를 덮어쓰지 않고 보존
+    if(!result || !result.questions || result.questions.length===0){
+        const prev=articles[bookName][unitKey].articles[idx];
+        // 본문만 갱신, 단어·문제는 기존 것 유지
+        articles[bookName][unitKey].articles[idx]={...prev,content};
+        _backupArticles(articles);
+        saveArticles(articles);
+        const noKey = !LS.g('apikey');
+        alert(noKey
+            ? '⚠️ 이 창에 API 키가 없어 재생성하지 못했습니다.\n\n본문만 저장하고, 기존 단어·문제는 그대로 보존했습니다.'
+            : '⚠️ AI 응답을 처리하지 못했습니다.\n\n본문만 저장하고, 기존 단어·문제는 그대로 보존했습니다. 잠시 후 다시 시도하세요.');
+        closeModal();
+        return;
+    }
     articles[bookName][unitKey].articles[idx]={...articles[bookName][unitKey].articles[idx],content,vocabulary:result.vocabulary,keySentences:result.keySentences||[],questions:result.questions,aiGenerated:ai};
+    _backupArticles(articles);
     saveArticles(articles);alert('수정 완료!');closeModal();
 }
 function savePdfEdit(){
