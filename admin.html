@@ -958,7 +958,8 @@ ${wordsList}
 - 예문은 10~20단어 사이
 - highlight는 예문 안에 실제로 나오는 단어 형태로 정확히 표기
 - highlightKo는 한글 번역 안에 실제로 나오는 표현으로 정확히 표기
-- 응답은 반드시 위 JSON 형식 (다른 텍스트, 마크다운, 설명 절대 금지)`;
+- 응답은 반드시 위 JSON 형식 (다른 텍스트, 마크다운, 설명 절대 금지)
+- ⚠️ 모든 문자열 값(특히 explanation, presentationBox 등) 안에서 실제 줄바꿈을 절대 넣지 말 것. 한 줄로 작성하고, 따옴표(")는 반드시 백슬래시로 escape할 것`;
     
     const response=await fetch('https://api.anthropic.com/v1/messages',{
         method:'POST',
@@ -2917,13 +2918,8 @@ ${answerText}
     const data=await r.json();
     const t=data.content?.find(c=>c.type==="text")?.text||"";
     // 1차: 통째로 파싱 시도
-    let raw=t.replace(/```json/gi,'').replace(/```/g,'').trim();
-    const _s=raw.indexOf('{'), _e=raw.lastIndexOf('}');
-    const m=(_s>=0&&_e>_s)?[raw.slice(_s,_e+1)]:null;
-    if(m){
-        try{const p=JSON.parse(m[0]);if(p.questions&&p.questions.length>0)return p.questions;}catch(e){}
-        try{const p=JSON.parse(m[0].replace(/,\s*([}\]])/g,'$1').replace(/[\u0000-\u001F]+/g,' '));if(p.questions&&p.questions.length>0)return p.questions;}catch(e){}
-    }
+    const p=_safeParseAIJson(t);
+    if(p&&p.questions&&p.questions.length>0)return p.questions;
     // 2차: 잘렸으면 완성된 객체만 복구
     const salvaged=salvageQuestions(t);
     if(salvaged.length>0)return salvaged;
@@ -5813,6 +5809,40 @@ Q4 [글의 순서]: "주어진 글 다음에 이어질 글의 순서로 가장 �
 const cycledType=((num-1)%3)+1;
 return sets[cycledType]||sets[1];}
 
+
+// AI 응답 JSON을 안전하게 파싱 — 문자열 값 내부의 raw 개행/제어문자/끝쉼표를 보정
+function _safeParseAIJson(raw){
+    if(!raw) return null;
+    // 1) 코드펜스 제거
+    let s = raw.replace(/```json/gi,'').replace(/```/g,'').trim();
+    // 2) 첫 { ~ 마지막 } 추출
+    const a = s.indexOf('{'), b = s.lastIndexOf('}');
+    if(a<0 || b<=a) return null;
+    s = s.slice(a, b+1);
+    // 3) 1차: 그대로
+    try { return JSON.parse(s); } catch(e){}
+    // 4) 2차: 끝쉼표 제거 + 제어문자 공백화
+    try { return JSON.parse(s.replace(/,\s*([}\]])/g,'$1').replace(/[\u0000-\u001F]+/g,' ')); } catch(e){}
+    // 5) 3차: 문자열 값 내부의 raw 개행/탭/캐리지리턴을 escape 처리
+    //    (따옴표 안에서만 치환 — 문자열 밖 공백은 건드리지 않음)
+    let out = '', inStr = false, esc = false;
+    for(let i=0;i<s.length;i++){
+        const c = s[i];
+        if(esc){ out += c; esc = false; continue; }
+        if(c === '\\'){ out += c; esc = true; continue; }
+        if(c === '"'){ inStr = !inStr; out += c; continue; }
+        if(inStr){
+            if(c === '\n'){ out += '\\n'; continue; }
+            if(c === '\r'){ out += '\\r'; continue; }
+            if(c === '\t'){ out += '\\t'; continue; }
+        }
+        out += c;
+    }
+    try { return JSON.parse(out.replace(/,\s*([}\]])/g,'$1')); } catch(e){}
+    // 6) 최종 실패
+    return null;
+}
+
 async function generateWithAI(text,num){
     const apiKey=LS.g('apikey');if(!apiKey)return null;
     const settings=getSettings();
@@ -6001,13 +6031,8 @@ ${getQuestionPrompt(num)}
         const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,messages:[{role:"user",content:prompt}]})});
         if(!r.ok)return null;
         const data=await r.json();const t=data.content?.find(c=>c.type==="text")?.text||"";
-        let raw=t.replace(/```json/gi,'').replace(/```/g,'').trim();
-        const _s=raw.indexOf('{'), _e=raw.lastIndexOf('}');
-        const m=(_s>=0&&_e>_s)?[raw.slice(_s,_e+1)]:null;
-        if(m){
-            let p;
-            try{p=JSON.parse(m[0]);}
-            catch(err){p=JSON.parse(m[0].replace(/,\s*([}\]])/g,'$1').replace(/[\u0000-\u001F]+/g,' '));}
+        const p=_safeParseAIJson(t);
+        if(p){
             if(p.vocabulary&&p.questions?.length===4){
                 // 호환성: keySentences가 없어도 sentenceList를 keySentences로도 노출
                 if(p.sentenceList&&!p.keySentences){
